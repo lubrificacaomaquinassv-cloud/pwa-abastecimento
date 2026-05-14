@@ -225,9 +225,6 @@
                     <label>Tipo de filtro — linha 2
                       <input id="lubeFilterType2" name="lubeFilterType2" placeholder="Opcional — segundo filtro" />
                     </label>
-                    <label class="field-span-full">Proxima troca (data ou horimetro)
-                      <input id="lubeProximaTroca" name="lubeProximaTroca" placeholder="Ex.: 20/08/2026 ou 3500 h" />
-                    </label>
                   </div>
                 </div>
                 <label id="lube-observation-wrap" class="lube-observation-block hidden">
@@ -251,32 +248,6 @@
               </div>
               <ul id="recent-comboio-list" class="recent-body"></ul>
             </div>
-          </section>
-        </div>
-
-        <!-- SALDO DE DIESEL DO COMBOIO -->
-        <div id="trailing-diesel" class="trailing-anchor">
-          <section class="card">
-            <h2>Saldo de diesel no comboio</h2>
-            <div class="diesel-saldo-grid">
-              <div class="summary-item">
-                <span>Total entradas</span>
-                <strong id="diesel-entradas">0,0 L</strong>
-              </div>
-              <div class="summary-item">
-                <span>Total saidas</span>
-                <strong id="diesel-saidas">0,0 L</strong>
-              </div>
-              <div class="summary-item">
-                <span>Saldo atual</span>
-                <strong id="diesel-saldo">0,0 L</strong>
-              </div>
-            </div>
-            <form id="diesel-entry-form" class="inline-form" style="margin-top:16px">
-              <input id="diesel-entry-input" name="dieselEntry" type="number" step="0.1" min="0.1" placeholder="Litros abastecidos no comboio" />
-              <button type="submit">Registrar entrada</button>
-            </form>
-            <p class="subtitle" style="margin-top:8px">Registre cada vez que abastecer o caminhao comboio. As saidas sao somadas automaticamente dos lancamentos.</p>
           </section>
         </div>
 
