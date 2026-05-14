@@ -672,3 +672,42 @@ button.gate-choice-btn-alt:hover {
     color: #f08b85;
   }
 }
+/* --- Tipo de servico (radio buttons estilizados) --- */
+.tipo-servico-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.tipo-btn-label {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.tipo-btn-label input[type="radio"] {
+  display: none;
+}
+
+.tipo-btn-label span {
+  padding: 10px 18px;
+  border: 2px solid #c5d0db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #f0f4f8;
+  color: var(--muted);
+  transition: 0.15s;
+  cursor: pointer;
+  width: auto;
+  margin: 0;
+}
+
+.tipo-btn-label input[type="radio"]:checked + span {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
