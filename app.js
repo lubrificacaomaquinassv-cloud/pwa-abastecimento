@@ -415,6 +415,7 @@ receiptForm.addEventListener("submit", (event) => {
     liters,
     location: String(formData.get("receiptLocation") || "").trim(),
     workType: String(formData.get("receiptWorkType") || "").trim(),
+    hourmeterOdometer: String(formData.get("receiptHourmeter") || "").trim(),
     lubrication: tipo !== "abastecimento" ? {
       actions: lubeActions,
       oilLine1: String(formData.get("lubeOilType1") || "").trim(),
