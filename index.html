@@ -8,6 +8,15 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./styles.css" />
     <title>CONTROLE DE ABASTECIMENTO DE FROTA</title>
+    <style>
+      .tipo-servico-group { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+      .tipo-btn-label { display: flex; align-items: center; gap: 0; margin: 0; cursor: pointer; }
+      .tipo-btn-label input[type="radio"] { display: none; }
+      .tipo-btn-label span { padding: 10px 18px; border: 2px solid #c5d0db; border-radius: 8px; font-size: 14px; font-weight: 600; background: #f0f4f8; color: var(--muted); transition: 0.15s; cursor: pointer; width: auto; margin: 0; }
+      .tipo-btn-label input[type="radio"]:checked + span { background: var(--primary); color: #fff; border-color: var(--primary); }
+      .diesel-saldo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+      @media (max-width: 520px) { .diesel-saldo-grid { grid-template-columns: 1fr; } }
+    </style>
   </head>
   <body>
     <main class="container">
@@ -20,7 +29,7 @@
         <h2 class="gate-prompt">Primeiro escolha: posto de abastecimento ou comboio</h2>
         <p class="subtitle gate-hint">
           So depois desta escolha o formulario da area aparece. Cada fluxo e uma tela separada. Voce pode
-          trocar depois com &quot;Trocar area&quot; sem perder o que ja foi salvo no aparelho.
+          trocar depois com "Trocar area" sem perder o que ja foi salvo no aparelho.
         </p>
         <div class="gate-choices" role="group" aria-label="Posto de abastecimento ou comboio">
           <button type="button" id="gate-posto" class="gate-choice-btn">
@@ -157,7 +166,7 @@
                 </div>
               </div>
 
-              <!-- COMBUSTIVEL — esconde quando lubrificacao -->
+              <!-- COMBUSTIVEL -->
               <div id="secao-combustivel" class="form-section">
                 <p class="form-section-kicker">Combustivel recebido</p>
                 <div class="form-grid">
@@ -188,22 +197,19 @@
                 </div>
               </div>
 
-              <!-- LUBRIFICACAO — esconde quando abastecimento -->
+              <!-- LUBRIFICACAO -->
               <div id="secao-lubrificacao" class="hidden">
                 <div class="form-section">
                   <fieldset class="group-fieldset group-fieldset-flush">
                     <legend>Tipo de lubrificacao</legend>
                     <label class="checkbox-line">
-                      <input type="checkbox" name="lubeActions" value="preventiva" />
-                      Preventiva
+                      <input type="checkbox" name="lubeActions" value="preventiva" />Preventiva
                     </label>
                     <label class="checkbox-line">
-                      <input type="checkbox" name="lubeActions" value="corretiva" />
-                      Corretiva
+                      <input type="checkbox" name="lubeActions" value="corretiva" />Corretiva
                     </label>
                     <label class="checkbox-line">
-                      <input type="checkbox" name="lubeActions" value="completar_nivel" />
-                      Completar nivel
+                      <input type="checkbox" name="lubeActions" value="completar_nivel" />Completar nivel
                     </label>
                   </fieldset>
                 </div>
@@ -224,6 +230,9 @@
                     </label>
                     <label>Tipo de filtro — linha 2
                       <input id="lubeFilterType2" name="lubeFilterType2" placeholder="Opcional — segundo filtro" />
+                    </label>
+                    <label class="field-span-full">Proxima troca (data ou horimetro)
+                      <input id="lubeProximaTroca" name="lubeProximaTroca" placeholder="Ex.: 20/08/2026 ou 3500 h" />
                     </label>
                   </div>
                 </div>
@@ -251,6 +260,32 @@
           </section>
         </div>
 
+        <!-- SALDO DE DIESEL -->
+        <div id="trailing-diesel" class="trailing-anchor">
+          <section class="card">
+            <h2>Saldo de diesel no comboio</h2>
+            <div class="diesel-saldo-grid">
+              <div class="summary-item">
+                <span>Total entradas</span>
+                <strong id="diesel-entradas">0,0 L</strong>
+              </div>
+              <div class="summary-item">
+                <span>Total saidas</span>
+                <strong id="diesel-saidas">0,0 L</strong>
+              </div>
+              <div class="summary-item">
+                <span>Saldo atual</span>
+                <strong id="diesel-saldo">0,0 L</strong>
+              </div>
+            </div>
+            <form id="diesel-entry-form" class="inline-form" style="margin-top:16px">
+              <input id="diesel-entry-input" name="dieselEntry" type="number" step="0.1" min="0.1" placeholder="Litros abastecidos no comboio" />
+              <button type="submit">Registrar entrada</button>
+            </form>
+            <p class="subtitle" style="margin-top:8px">Registre cada vez que abastecer o caminhao comboio. As saidas sao somadas automaticamente dos lancamentos.</p>
+          </section>
+        </div>
+
         <div id="trailing-config" class="trailing-anchor">
           <section class="card">
             <h2>Configuracao de combustiveis</h2>
@@ -275,7 +310,7 @@
       </div>
     </main>
 
-    <script src="./config.js?v=17"></script>
-    <script src="./app.js?v=17"></script>
+    <script src="./config.js?v=18"></script>
+    <script src="./app.js?v=18"></script>
   </body>
 </html>
