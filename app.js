@@ -1,22 +1,28 @@
+const SUPABASE_URL = (window.SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_KEY = window.SUPABASE_ANON_KEY || "";
+
+async function supabaseInsert(table, record) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Prefer": "return=minimal"
+    },
+    body: JSON.stringify(record)
+  });
+  if (!response.ok) throw new Error(`Supabase ${table}: ${await response.text()}`);
+  return true;
+}
+
 const STORAGE_KEY = "comboio-fuel-records";
 const RECEIPTS_STORAGE_KEY = "comboio-fuel-receipts";
 const PENDING_SYNC_STORAGE_KEY = "comboio-pending-sync-events";
 const ORDER_SEQ_KEY = "comboio-order-seq";
-const POST_FUEL_OPTIONS = [
-  "Gasolina Comum",
-  "Etanol Comum",
-  "Diesel S-10",
-  "Diesel S-500 Aditivado",
-  "Diesel S-500 Comum",
-];
+const DIESEL_ENTRIES_KEY = "comboio-diesel-entries";
+const POST_FUEL_OPTIONS = ["Gasolina Comum","Etanol Comum","Diesel S-10","Diesel S-500 Aditivado","Diesel S-500 Comum"];
 const RECEIPT_FUEL_OPTIONS = [...POST_FUEL_OPTIONS];
-const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
-
-function syncPostUrl() {
-  if (!API_BASE_URL) return "";
-  if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
-  return `${API_BASE_URL}/lancamentos`;
-}
 
 const form = document.getElementById("fuel-form");
 const receiptForm = document.getElementById("receipt-form");
@@ -24,6 +30,7 @@ const workspacePosto = document.getElementById("workspace-posto");
 const workspaceComboio = document.getElementById("workspace-comboio");
 const trailingConfig = document.getElementById("trailing-config");
 const trailingInforme = document.getElementById("trailing-informe");
+const trailingDiesel = document.getElementById("trailing-diesel");
 const gateScreen = document.getElementById("gate-screen");
 const appScreen = document.getElementById("app-screen");
 const gatePostoButton = document.getElementById("gate-posto");
@@ -50,40 +57,31 @@ const lubeObservationInput = document.getElementById("lubeObservation");
 const secaoCombustivel = document.getElementById("secao-combustivel");
 const secaoLubrificacao = document.getElementById("secao-lubrificacao");
 
-// ── Tipo de servico ──────────────────────────────────────────
 function getTipoServico() {
-  const checked = receiptForm.querySelector('input[name="tipoServico"]:checked');
-  return checked ? checked.value : "abastecimento";
+  const c = receiptForm.querySelector('input[name="tipoServico"]:checked');
+  return c ? c.value : "abastecimento";
 }
 
 function atualizarSecoesPorTipo() {
   const tipo = getTipoServico();
+  const isLub = tipo === "lubrificacao";
   const isAbast = tipo === "abastecimento";
-  const isLub   = tipo === "lubrificacao";
-  const isAmbos = tipo === "ambos";
-
-  // Combustivel: aparece em abastecimento e ambos
   secaoCombustivel.classList.toggle("hidden", isLub);
   receiptFuelTypeSelect.required = !isLub;
   document.getElementById("receiptLiters").required = !isLub;
-
-  // Lubrificacao: aparece em lubrificacao e ambos
   secaoLubrificacao.classList.toggle("hidden", isAbast);
 }
 
-receiptForm.querySelectorAll('input[name="tipoServico"]').forEach((radio) => {
-  radio.addEventListener("change", () => {
-    atualizarSecoesPorTipo();
-    toggleLubeObservationField();
-  });
+receiptForm.querySelectorAll('input[name="tipoServico"]').forEach((r) => {
+  r.addEventListener("change", () => { atualizarSecoesPorTipo(); toggleLubeObservationField(); });
 });
 
-// ── Trailing blocks ──────────────────────────────────────────
 function attachTrailingBlocks(mode) {
   if (mode === "posto") {
     workspacePosto.appendChild(trailingConfig);
     workspacePosto.appendChild(trailingInforme);
   } else {
+    workspaceComboio.appendChild(trailingDiesel);
     workspaceComboio.appendChild(trailingConfig);
     workspaceComboio.appendChild(trailingInforme);
   }
@@ -103,38 +101,26 @@ function enterWorkspace(mode) {
   workspacePosto.classList.toggle("hidden", !isPosto);
   workspaceComboio.classList.toggle("hidden", isPosto);
   attachTrailingBlocks(mode);
-  if (!isPosto) {
-    updateOrderPreview();
-    atualizarSecoesPorTipo();
-  }
-  areaLabel.textContent = isPosto
-    ? "Fluxo do posto (escolhido no inicio). Nada do comboio nesta tela."
-    : "Fluxo do comboio (escolhido no inicio). Nada do posto nesta tela.";
+  if (!isPosto) { updateOrderPreview(); atualizarSecoesPorTipo(); renderDieselSaldo(); }
+  areaLabel.textContent = isPosto ? "Fluxo do posto. Nada do comboio nesta tela." : "Fluxo do comboio. Nada do posto nesta tela.";
   if (appWorkflowHeading && appWorkflowSub) {
     appWorkflowHeading.textContent = isPosto ? "Posto de abastecimento" : "Comboio";
-    appWorkflowSub.textContent = isPosto
-      ? "Voce escolheu posto no inicio. Abaixo so entra lancamento do posto fixo."
-      : "Voce escolheu comboio no inicio. Abaixo so entra recebimento e servico no campo.";
+    appWorkflowSub.textContent = isPosto ? "Voce escolheu posto no inicio." : "Voce escolheu comboio no inicio.";
   }
   document.title = isPosto ? "Posto | Abastecimento frota" : "Comboio | Abastecimento frota";
-  fillFuelSelects();
-  renderFuelOptionsSettings();
-  window.scrollTo(0, 0);
+  fillFuelSelects(); renderFuelOptionsSettings(); window.scrollTo(0, 0);
 }
 
-// ── Data/hora ────────────────────────────────────────────────
 function getNowLocalDateTimeInputValue() {
   const now = new Date();
-  const offset = now.getTimezoneOffset();
-  const local = new Date(now.getTime() - offset * 60000);
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
 }
 
 function toIsoFromDateTimeLocal(value) {
   if (!value) return new Date().toISOString();
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
-  return date.toISOString();
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
 function setDefaultDateTimes() {
@@ -142,7 +128,6 @@ function setDefaultDateTimes() {
   if (!receiptDateTimeInput.value) receiptDateTimeInput.value = getNowLocalDateTimeInputValue();
 }
 
-// ── Ordem ────────────────────────────────────────────────────
 function peekNextOrderNumber() {
   const n = Number(localStorage.getItem(ORDER_SEQ_KEY) || "0") + 1;
   return `COM-${String(n).padStart(5, "0")}`;
@@ -158,330 +143,183 @@ function updateOrderPreview() {
   nextOrderPreview.textContent = `Proxima ordem ao salvar: ${peekNextOrderNumber()}`;
 }
 
-// ── Observacao lubrificacao ──────────────────────────────────
 function toggleLubeObservationField() {
   const tipo = getTipoServico();
-  if (tipo === "abastecimento") {
-    lubeObservationWrap.classList.add("hidden");
-    lubeObservationInput.required = false;
-    return;
-  }
+  if (tipo === "abastecimento") { lubeObservationWrap.classList.add("hidden"); lubeObservationInput.required = false; return; }
   const actions = [...receiptForm.querySelectorAll('input[name="lubeActions"]:checked')].map(n => n.value);
-  const requiresObs = actions.includes("corretiva") || actions.includes("completar_nivel");
-  lubeObservationWrap.classList.toggle("hidden", !requiresObs);
-  lubeObservationInput.required = requiresObs;
-  if (!requiresObs) lubeObservationInput.value = "";
+  const req = actions.includes("corretiva") || actions.includes("completar_nivel");
+  lubeObservationWrap.classList.toggle("hidden", !req);
+  lubeObservationInput.required = req;
+  if (!req) lubeObservationInput.value = "";
 }
 
-// ── ID ───────────────────────────────────────────────────────
 function makeId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-// ── Storage ──────────────────────────────────────────────────
-function getRecords() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
-}
+function getRecords() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; } }
 function saveRecords(r) { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); }
-
-function getReceipts() {
-  try { return JSON.parse(localStorage.getItem(RECEIPTS_STORAGE_KEY) || "[]"); } catch { return []; }
-}
+function getReceipts() { try { return JSON.parse(localStorage.getItem(RECEIPTS_STORAGE_KEY) || "[]"); } catch { return []; } }
 function saveReceipts(r) { localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(r)); }
-
-function getPendingSyncEvents() {
-  try {
-    const p = JSON.parse(localStorage.getItem(PENDING_SYNC_STORAGE_KEY) || "[]");
-    return Array.isArray(p) ? p : [];
-  } catch { return []; }
-}
+function getPendingSyncEvents() { try { const p = JSON.parse(localStorage.getItem(PENDING_SYNC_STORAGE_KEY) || "[]"); return Array.isArray(p) ? p : []; } catch { return []; } }
 function savePendingSyncEvents(e) { localStorage.setItem(PENDING_SYNC_STORAGE_KEY, JSON.stringify(e)); }
+function getDieselEntries() { try { return JSON.parse(localStorage.getItem(DIESEL_ENTRIES_KEY) || "[]"); } catch { return []; } }
+function saveDieselEntries(e) { localStorage.setItem(DIESEL_ENTRIES_KEY, JSON.stringify(e)); }
 
-// ── Sync status ──────────────────────────────────────────────
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
-  if (!API_BASE_URL) {
-    dbSyncStatus.textContent = "Banco nao configurado.";
-    dbSyncStatus.className = "connection-status offline";
-    return;
-  }
-  if (pending === 0) {
-    dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia.";
-    dbSyncStatus.className = "connection-status online";
-    return;
-  }
+  if (!SUPABASE_URL) { dbSyncStatus.textContent = "Banco nao configurado."; dbSyncStatus.className = "connection-status offline"; return; }
+  if (pending === 0) { dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia."; dbSyncStatus.className = "connection-status online"; return; }
   dbSyncStatus.textContent = `${pending} lancamento(s) aguardando envio ao banco.`;
   dbSyncStatus.className = "connection-status offline";
 }
 
+async function syncEventToSupabase(event) {
+  const p = event.payload;
+  if (event.type === "abastecimento") {
+    await supabaseInsert("posto", { id: p.id, vehicle: p.vehicle, fuel_type: p.fuelType, liters: parseFloat(p.liters), hourmeter: p.hourmeterOdometer||null, work_front: p.workFront||null, work_type: p.workType||null, created_at: p.createdAt, synced_at: new Date().toISOString() });
+    return;
+  }
+  if (event.type === "recebimento") {
+    await supabaseInsert("comboio", { id: p.id, order_number: p.orderNumber, tipo_servico: p.tipoServico, vehicle: p.vehicle, fuel_type: p.fuelType||null, liters: p.liters ? parseFloat(p.liters) : null, hourmeter: p.hourmeterOdometer||null, location: p.location||null, work_type: p.workType||null, created_at: p.createdAt, synced_at: new Date().toISOString() });
+    if (p.lubrication && p.tipoServico !== "abastecimento") {
+      const lub = p.lubrication;
+      await supabaseInsert("lubrificacao", { id: makeId(), comboio_id: p.id, order_number: p.orderNumber, vehicle: p.vehicle, location: p.location||null, actions: (lub.actions||[]).join(", "), oil_line1: lub.oilLine1||null, oil_line2: lub.oilLine2||null, oil_line3: lub.oilLine3||null, filter_line1: lub.filterLine1||null, filter_line2: lub.filterLine2||null, proxima_troca: lub.proximaTroca||null, observation: lub.observation||null, created_at: p.createdAt, synced_at: new Date().toISOString() });
+    }
+    return;
+  }
+  if (event.type === "diesel_entrada") {
+    await supabaseInsert("diesel_entrada", { id: p.id, liters: parseFloat(p.liters), created_at: p.createdAt });
+  }
+}
+
 async function processPendingSyncEvents() {
-  if (!API_BASE_URL || !navigator.onLine) { updateDbSyncStatus(); return; }
+  if (!SUPABASE_URL || !navigator.onLine) { updateDbSyncStatus(); return; }
   let queue = getPendingSyncEvents();
   while (queue.length) {
     const event = queue[0];
-    try {
-      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
-      const response = await fetch(url);
-      const text = await response.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch { break; }
-      if (!data || data.ok === false) { console.error("Sync recusado:", data && data.error); break; }
-      queue = queue.slice(1);
-      savePendingSyncEvents(queue);
-    } catch { break; }
+    try { await syncEventToSupabase(event); queue = queue.slice(1); savePendingSyncEvents(queue); }
+    catch (err) { console.error("Sync falhou:", err); break; }
   }
   updateDbSyncStatus();
 }
 
 function enqueueSyncEvent(type, payload) {
   const queue = getPendingSyncEvents();
-  const ev = { id: makeId(), type, payload, createdAt: new Date().toISOString() };
-  const shSecret = typeof window !== "undefined" && window.SHEETS_SYNC_SECRET;
-  if (shSecret && String(shSecret).trim()) ev.secret = String(shSecret).trim();
-  queue.push(ev);
-  savePendingSyncEvents(queue);
-  updateDbSyncStatus();
-  processPendingSyncEvents();
-}
-
-// ── Combustiveis ─────────────────────────────────────────────
-function getUniqueFuelOptions() {
-  return [...new Set([...POST_FUEL_OPTIONS, ...RECEIPT_FUEL_OPTIONS])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  queue.push({ id: makeId(), type, payload, createdAt: new Date().toISOString() });
+  savePendingSyncEvents(queue); updateDbSyncStatus(); processPendingSyncEvents();
 }
 
 function renderFuelOptionsSettings() {
-  const options = getUniqueFuelOptions();
   fuelOptionsList.innerHTML = "";
-  options.forEach((fuel) => {
-    const item = document.createElement("li");
-    item.className = "fuel-option-item";
-    item.innerHTML = `<span>${fuel}</span><span>Regra fixa</span>`;
-    fuelOptionsList.appendChild(item);
+  POST_FUEL_OPTIONS.forEach((fuel) => {
+    const item = document.createElement("li"); item.className = "fuel-option-item";
+    item.innerHTML = `<span>${fuel}</span><span>Regra fixa</span>`; fuelOptionsList.appendChild(item);
   });
 }
 
 function fillFuelSelects() {
   if (!fuelTypeSelect || !receiptFuelTypeSelect) return;
-  const selPosto = fuelTypeSelect.value;
-  const selComboio = receiptFuelTypeSelect.value;
-
+  const selP = fuelTypeSelect.value; const selC = receiptFuelTypeSelect.value;
   fuelTypeSelect.innerHTML = "<option value=''>Selecione</option>";
-  POST_FUEL_OPTIONS.forEach((f) => {
-    const o = document.createElement("option");
-    o.value = o.textContent = f;
-    fuelTypeSelect.appendChild(o);
-  });
-
   receiptFuelTypeSelect.innerHTML = "<option value=''>Selecione</option>";
-  RECEIPT_FUEL_OPTIONS.forEach((f) => {
-    const o = document.createElement("option");
-    o.value = o.textContent = f;
-    receiptFuelTypeSelect.appendChild(o);
+  POST_FUEL_OPTIONS.forEach((f) => {
+    const o1 = document.createElement("option"); o1.value = o1.textContent = f; fuelTypeSelect.appendChild(o1);
+    const o2 = document.createElement("option"); o2.value = o2.textContent = f; receiptFuelTypeSelect.appendChild(o2);
   });
-
-  if (selPosto && POST_FUEL_OPTIONS.includes(selPosto)) fuelTypeSelect.value = selPosto;
-  if (selComboio && RECEIPT_FUEL_OPTIONS.includes(selComboio)) receiptFuelTypeSelect.value = selComboio;
+  if (selP && POST_FUEL_OPTIONS.includes(selP)) fuelTypeSelect.value = selP;
+  if (selC && RECEIPT_FUEL_OPTIONS.includes(selC)) receiptFuelTypeSelect.value = selC;
 }
 
-// ── Render listas recentes ───────────────────────────────────
+function getTotalDieselEntradas() { return getDieselEntries().reduce((s, e) => s + Number(e.liters||0), 0); }
+function getTotalDieselSaidas() { return getReceipts().filter(r => r.tipoServico !== "lubrificacao" && (r.fuelType||"").toLowerCase().includes("diesel")).reduce((s, r) => s + Number(r.liters||0), 0); }
+
+function renderDieselSaldo() {
+  const entradas = getTotalDieselEntradas(); const saidas = getTotalDieselSaidas(); const saldo = entradas - saidas;
+  const fmt = (v) => v.toFixed(1).replace(".", ",") + " L";
+  const elE = document.getElementById("diesel-entradas"); const elS = document.getElementById("diesel-saidas"); const elSal = document.getElementById("diesel-saldo");
+  if (elE) elE.textContent = fmt(entradas); if (elS) elS.textContent = fmt(saidas);
+  if (elSal) { elSal.textContent = fmt(saldo); elSal.style.color = saldo < 0 ? "var(--danger)" : "#127446"; }
+}
+
 function renderRecentPosto() {
-  const last5 = getRecords().filter(r => r.source === "posto" || !r.source).slice(-5).reverse();
-  recentPostoList.innerHTML = "";
-  if (!last5.length) {
-    recentPostoList.innerHTML = "<li class='recent-item recent-empty'><span class='recent-cell'>Nenhum abastecimento ainda.</span></li>";
-    return;
-  }
-  last5.forEach((r) => {
-    const li = document.createElement("li");
-    li.className = "recent-item";
-    li.setAttribute("role", "row");
-    li.innerHTML = `
-      <span class="recent-cell">${escapeHtml(String(r.vehicle || "-"))}</span>
-      <span class="recent-cell">${escapeHtml(String(r.fuelType || "-"))}</span>
-      <span class="recent-cell">${escapeHtml(String(r.liters || "0"))} L</span>
-    `;
-    recentPostoList.appendChild(li);
-  });
+  const last5 = getRecords().slice(-5).reverse(); recentPostoList.innerHTML = "";
+  if (!last5.length) { recentPostoList.innerHTML = "<li class='recent-item recent-empty'><span class='recent-cell'>Nenhum abastecimento ainda.</span></li>"; return; }
+  last5.forEach((r) => { const li = document.createElement("li"); li.className = "recent-item"; li.setAttribute("role","row"); li.innerHTML = `<span class="recent-cell">${escapeHtml(r.vehicle||"-")}</span><span class="recent-cell">${escapeHtml(r.fuelType||"-")}</span><span class="recent-cell">${escapeHtml(r.liters||"0")} L</span>`; recentPostoList.appendChild(li); });
 }
 
 function renderRecentComboio() {
-  const last5 = getReceipts().slice(-5).reverse();
-  recentComboioList.innerHTML = "";
-  if (!last5.length) {
-    recentComboioList.innerHTML = "<li class='recent-item recent-item-4 recent-empty'><span class='recent-cell'>Nenhum servico ainda.</span></li>";
-    return;
-  }
-  last5.forEach((r) => {
-    const li = document.createElement("li");
-    li.className = "recent-item recent-item-4";
-    li.setAttribute("role", "row");
-    const tipo = r.tipoServico === "lubrificacao" ? "Lub" : r.tipoServico === "ambos" ? "Ambos" : "Abast";
-    const qty = r.tipoServico === "lubrificacao" ? "-" : `${escapeHtml(String(r.liters || "0"))} L`;
-    li.innerHTML = `
-      <span class="recent-cell">${escapeHtml(String(r.orderNumber || "-"))}</span>
-      <span class="recent-cell">${escapeHtml(String(r.vehicle || "-"))}</span>
-      <span class="recent-cell">${tipo}</span>
-      <span class="recent-cell">${qty}</span>
-    `;
-    recentComboioList.appendChild(li);
+  const last5 = getReceipts().slice(-5).reverse(); recentComboioList.innerHTML = "";
+  if (!last5.length) { recentComboioList.innerHTML = "<li class='recent-item recent-item-4 recent-empty'><span class='recent-cell'>Nenhum servico ainda.</span></li>"; return; }
+  last5.forEach((r) => { const li = document.createElement("li"); li.className = "recent-item recent-item-4"; li.setAttribute("role","row"); const tipo = r.tipoServico === "lubrificacao" ? "Lub" : r.tipoServico === "ambos" ? "Ambos" : "Abast"; const qty = r.tipoServico === "lubrificacao" ? "-" : `${escapeHtml(String(r.liters||"0"))} L`; li.innerHTML = `<span class="recent-cell">${escapeHtml(r.orderNumber||"-")}</span><span class="recent-cell">${escapeHtml(r.vehicle||"-")}</span><span class="recent-cell">${tipo}</span><span class="recent-cell">${qty}</span>`; recentComboioList.appendChild(li); });
+}
+
+function escapeHtml(text) { const d = document.createElement("div"); d.textContent = String(text); return d.innerHTML; }
+function renderAll() { renderRecentPosto(); renderRecentComboio(); }
+
+function updateConnectionStatus() {
+  if (navigator.onLine) { connectionStatus.textContent = "Online"; connectionStatus.className = "connection-status online"; }
+  else { connectionStatus.textContent = "Offline - dados salvos localmente"; connectionStatus.className = "connection-status offline"; }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const fd = new FormData(form);
+  const fuelType = String(fd.get("fuelType")||"").trim();
+  if (!POST_FUEL_OPTIONS.includes(fuelType)) return;
+  const record = { id: makeId(), vehicle: fd.get("vehicle"), fuelType, liters: Number(fd.get("liters")).toFixed(1), hourmeterOdometer: String(fd.get("hourmeterOdometer")||"").trim(), workFront: String(fd.get("workFront")||"").trim(), workType: String(fd.get("workType")||"").trim(), source: "posto", createdAt: toIsoFromDateTimeLocal(String(fd.get("fuelDateTime")||"")) };
+  const records = getRecords(); records.push(record); saveRecords(records);
+  enqueueSyncEvent("abastecimento", record);
+  form.reset(); fuelDateTimeInput.value = getNowLocalDateTimeInputValue(); fillFuelSelects(); renderFuelOptionsSettings(); renderAll();
+});
+
+receiptForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const fd = new FormData(receiptForm);
+  const tipo = getTipoServico();
+  if (tipo !== "lubrificacao") { const ft = String(fd.get("receiptFuelType")||"").trim(); if (!RECEIPT_FUEL_OPTIONS.includes(ft)) return; }
+  const lubeActions = fd.getAll("lubeActions");
+  if (tipo !== "abastecimento") { const reqObs = lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel"); if (reqObs && !String(fd.get("lubeObservation")||"").trim()) return; }
+  const orderNumber = assignNextOrderNumber();
+  const fuelType = tipo !== "lubrificacao" ? String(fd.get("receiptFuelType")||"").trim() : "";
+  const litersRaw = fd.get("receiptLiters");
+  const liters = tipo !== "lubrificacao" && litersRaw ? Number(litersRaw).toFixed(1) : "0.0";
+  const receipt = { id: makeId(), orderNumber, tipoServico: tipo, vehicle: String(fd.get("receiptVehicle")||"").trim(), fuelType, liters, hourmeterOdometer: String(fd.get("receiptHourmeter")||"").trim(), location: String(fd.get("receiptLocation")||"").trim(), workType: String(fd.get("receiptWorkType")||"").trim(), lubrication: tipo !== "abastecimento" ? { actions: lubeActions, oilLine1: String(fd.get("lubeOilType1")||"").trim(), oilLine2: String(fd.get("lubeOilType2")||"").trim(), oilLine3: String(fd.get("lubeOilType3")||"").trim(), filterLine1: String(fd.get("lubeFilterType1")||"").trim(), filterLine2: String(fd.get("lubeFilterType2")||"").trim(), proximaTroca: String(fd.get("lubeProximaTroca")||"").trim(), observation: String(fd.get("lubeObservation")||"").trim() } : null, source: "comboio", createdAt: toIsoFromDateTimeLocal(String(fd.get("receiptDateTime")||"")) };
+  const receipts = getReceipts(); receipts.push(receipt); saveReceipts(receipts);
+  enqueueSyncEvent("recebimento", receipt);
+  receiptForm.reset(); receiptDateTimeInput.value = getNowLocalDateTimeInputValue(); atualizarSecoesPorTipo(); toggleLubeObservationField(); updateOrderPreview(); fillFuelSelects(); renderFuelOptionsSettings(); renderAll(); renderDieselSaldo();
+});
+
+const dieselEntryForm = document.getElementById("diesel-entry-form");
+const dieselEntryInput = document.getElementById("diesel-entry-input");
+if (dieselEntryForm) {
+  dieselEntryForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const liters = parseFloat(dieselEntryInput.value);
+    if (!liters || liters <= 0) return;
+    const entry = { id: makeId(), liters: liters.toFixed(1), createdAt: new Date().toISOString() };
+    const entries = getDieselEntries(); entries.push(entry); saveDieselEntries(entries);
+    enqueueSyncEvent("diesel_entrada", entry);
+    dieselEntryForm.reset(); renderDieselSaldo();
   });
 }
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function renderAll() {
-  renderRecentPosto();
-  renderRecentComboio();
-}
-
-function updateConnectionStatus() {
-  if (navigator.onLine) {
-    connectionStatus.textContent = "Online";
-    connectionStatus.className = "connection-status online";
-  } else {
-    connectionStatus.textContent = "Offline - os dados continuam salvos localmente";
-    connectionStatus.className = "connection-status offline";
-  }
-}
-
-// ── Submit Posto ─────────────────────────────────────────────
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(form);
-  const fuelType = String(formData.get("fuelType") || "").trim();
-  if (!POST_FUEL_OPTIONS.includes(fuelType)) return;
-
-  const record = {
-    id: makeId(),
-    vehicle: formData.get("vehicle"),
-    fuelType,
-    liters: Number(formData.get("liters")).toFixed(1),
-    hourmeterOdometer: String(formData.get("hourmeterOdometer") || "").trim(),
-    workFront: String(formData.get("workFront") || "").trim(),
-    workType: String(formData.get("workType") || "").trim(),
-    source: "posto",
-    createdAt: toIsoFromDateTimeLocal(String(formData.get("fuelDateTime") || "")),
-  };
-
-  const records = getRecords();
-  records.push(record);
-  saveRecords(records);
-  enqueueSyncEvent("abastecimento", record);
-  form.reset();
-  fuelDateTimeInput.value = getNowLocalDateTimeInputValue();
-  fillFuelSelects();
-  renderFuelOptionsSettings();
-  renderAll();
-});
-
-// ── Submit Comboio ───────────────────────────────────────────
-receiptForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(receiptForm);
-  const tipo = getTipoServico();
-
-  // Validacao combustivel (somente se nao for só lubrificacao)
-  if (tipo !== "lubrificacao") {
-    const fuelType = String(formData.get("receiptFuelType") || "").trim();
-    if (!RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
-  }
-
-  // Validacao observacao lubrificacao
-  const lubeActions = formData.getAll("lubeActions");
-  if (tipo !== "abastecimento") {
-    const requiresObs = lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel");
-    const lubeObservation = String(formData.get("lubeObservation") || "").trim();
-    if (requiresObs && !lubeObservation) return;
-  }
-
-  const orderNumber = assignNextOrderNumber();
-  const fuelType = tipo !== "lubrificacao" ? String(formData.get("receiptFuelType") || "").trim() : "";
-  const litersRaw = formData.get("receiptLiters");
-  const liters = tipo !== "lubrificacao" && litersRaw ? Number(litersRaw).toFixed(1) : "0.0";
-
-  const receipt = {
-    id: makeId(),
-    orderNumber,
-    tipoServico: tipo,
-    vehicle: String(formData.get("receiptVehicle") || "").trim(),
-    fuelType,
-    liters,
-    location: String(formData.get("receiptLocation") || "").trim(),
-    workType: String(formData.get("receiptWorkType") || "").trim(),
-    hourmeterOdometer: String(formData.get("receiptHourmeter") || "").trim(),
-    lubrication: tipo !== "abastecimento" ? {
-      actions: lubeActions,
-      oilLine1: String(formData.get("lubeOilType1") || "").trim(),
-      oilLine2: String(formData.get("lubeOilType2") || "").trim(),
-      oilLine3: String(formData.get("lubeOilType3") || "").trim(),
-      filterLine1: String(formData.get("lubeFilterType1") || "").trim(),
-      filterLine2: String(formData.get("lubeFilterType2") || "").trim(),
-      observation: String(formData.get("lubeObservation") || "").trim(),
-    } : null,
-    source: "comboio",
-    createdAt: toIsoFromDateTimeLocal(String(formData.get("receiptDateTime") || "")),
-  };
-
-  const receipts = getReceipts();
-  receipts.push(receipt);
-  saveReceipts(receipts);
-  enqueueSyncEvent("recebimento", receipt);
-  receiptForm.reset();
-  receiptDateTimeInput.value = getNowLocalDateTimeInputValue();
-  atualizarSecoesPorTipo();
-  toggleLubeObservationField();
-  updateOrderPreview();
-  fillFuelSelects();
-  renderFuelOptionsSettings();
-  renderAll();
-});
-
-fuelSettingsForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  window.alert("Acao bloqueada: configuracoes so podem ser conciliadas pelo responsavel.");
-  newFuelOptionInput.value = "";
-});
-
+fuelSettingsForm.addEventListener("submit", (event) => { event.preventDefault(); window.alert("Acao bloqueada."); newFuelOptionInput.value = ""; });
 gatePostoButton.addEventListener("click", () => enterWorkspace("posto"));
 gateComboioButton.addEventListener("click", () => enterWorkspace("comboio"));
 changeAreaButton.addEventListener("click", () => showGate());
-
-receiptForm.querySelectorAll('input[name="lubeActions"]').forEach((checkbox) => {
-  checkbox.addEventListener("change", toggleLubeObservationField);
-});
-
+receiptForm.querySelectorAll('input[name="lubeActions"]').forEach((cb) => cb.addEventListener("change", toggleLubeObservationField));
 window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-// ── Service Worker ───────────────────────────────────────────
-const SW_URL = "./sw.js?v=17";
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
-    try {
-      const reg = await navigator.serviceWorker.register(SW_URL, { updateViaCache: "none" });
-      reg.update();
-    } catch (error) {
-      console.error("Falha ao registrar service worker:", error);
-    }
+    try { const reg = await navigator.serviceWorker.register("./sw.js?v=18", { updateViaCache: "none" }); reg.update(); }
+    catch (e) { console.error("SW:", e); }
   });
 }
 
-// ── Init ─────────────────────────────────────────────────────
-fillFuelSelects();
-renderFuelOptionsSettings();
-setDefaultDateTimes();
-atualizarSecoesPorTipo();
-toggleLubeObservationField();
-updateOrderPreview();
-updateConnectionStatus();
-updateDbSyncStatus();
-processPendingSyncEvents();
-renderAll();
+fillFuelSelects(); renderFuelOptionsSettings(); setDefaultDateTimes(); atualizarSecoesPorTipo(); toggleLubeObservationField(); updateOrderPreview(); updateConnectionStatus(); updateDbSyncStatus(); processPendingSyncEvents(); renderAll(); renderDieselSaldo();
+
