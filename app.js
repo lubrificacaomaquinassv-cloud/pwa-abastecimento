@@ -144,7 +144,8 @@ function getRecords() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -158,7 +159,8 @@ function getReceipts() {
   const raw = localStorage.getItem(RECEIPTS_STORAGE_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
@@ -195,14 +197,30 @@ function updateDbSyncStatus(customText) {
 }
 
 async function syncToSupabase(event) {
+  if (!event || typeof event !== "object") {
+    console.warn("Evento inválido de sync:", event);
+    return false;
+  }
+  if (!event.type || !event.payload) {
+    console.warn("Evento sem type/payload:", event);
+    return false;
+  }
+
   const SB_URL = window.SUPABASE_URL || "https://azhpxhrwhegfysoeqmft.supabase.co";
   const SB_KEY = window.SUPABASE_ANON_KEY || "";
+
+  if (!SB_KEY) {
+    console.error("SB_KEY ausente. Defina window.SUPABASE_ANON_KEY.");
+    return false;
+  }
+
   const headers = {
     "Content-Type": "application/json",
     "apikey": SB_KEY,
     "Authorization": "Bearer " + SB_KEY,
-    "Prefer": "return=minimal"
+    "Prefer": "return=minimal",
   };
+
   const p = event.payload;
 
   try {
@@ -211,17 +229,21 @@ async function syncToSupabase(event) {
         method: "POST",
         headers,
         body: JSON.stringify({
-          vehicle:    p.vehicle              || null,
-          fuel_type:  p.fuelType             || null,
-          liters:     parseFloat(p.liters)   || null,
-          operator:   p.operatorDriver       || null,
-          hourmeter:  p.hourmeterOdometer    || null,
-          work_front: p.workFront            || null,
-          work_type:  p.workType             || null,
-          created_at: p.createdAt            || new Date().toISOString()
-        })
+          vehicle: p.vehicle || null,
+          fuel_type: p.fuelType || null,
+          liters: p.liters != null ? parseFloat(p.liters) : null,
+          operator: p.operatorDriver || null,
+          hourmeter: p.hourmeterOdometer || null,
+          work_front: p.workFront || null,
+          work_type: p.workType || null,
+          created_at: p.createdAt || new Date().toISOString(),
+        }),
       });
-      return r.ok || r.status === 201;
+      if (!r.ok) {
+        console.error("Falha ao sincronizar abastecimento:", r.status, await r.text());
+        return false;
+      }
+      return true;
     }
 
     if (event.type === "recebimento") {
@@ -229,56 +251,74 @@ async function syncToSupabase(event) {
         method: "POST",
         headers,
         body: JSON.stringify({
-          order_number: p.orderNumber          || null,
+          order_number: p.orderNumber || null,
           tipo_servico: "abastecimento",
-          vehicle:      p.vehicle              || null,
-          fuel_type:    p.fuelType             || null,
-          liters:       parseFloat(p.liters)   || null,
-          operator:     p.operatorDriver       || null,
-          location:     p.location             || null,
-          work_type:    p.workType             || null,
-          created_at:   p.createdAt            || new Date().toISOString()
-        })
+          vehicle: p.vehicle || null,
+          fuel_type: p.fuelType || null,
+          liters: p.liters != null ? parseFloat(p.liters) : null,
+          operator: p.operatorDriver || null,
+          location: p.location || null,
+          work_type: p.workType || null,
+          created_at: p.createdAt || new Date().toISOString(),
+        }),
       });
-      if (!r.ok && r.status !== 201) return false;
+      if (!r.ok) {
+        console.error("Falha ao sincronizar recebimento:", r.status, await r.text());
+        return false;
+      }
 
       const lub = p.lubrication;
-      if (lub && lub.actions && lub.actions.length > 0) {
-        await fetch(SB_URL + "/rest/v1/lubrificacao", {
+      if (lub && Array.isArray(lub.actions) && lub.actions.length > 0) {
+        const rLub = await fetch(SB_URL + "/rest/v1/lubrificacao", {
           method: "POST",
           headers,
           body: JSON.stringify({
-            order_number: p.orderNumber      || null,
-            vehicle:      p.vehicle          || null,
-            location:     p.location         || null,
-            actions:      lub.actions.join(","),
-            oil_line1:    lub.oilLine1        || null,
-            oil_line2:    lub.oilLine2        || null,
-            filter_line1: lub.filterLine1     || null,
-            filter_line2: lub.filterLine2     || null,
-            observation:  lub.observation     || null,
-            created_at:   p.createdAt         || new Date().toISOString()
-          })
+            order_number: p.orderNumber || null,
+            vehicle: p.vehicle || null,
+            location: p.location || null,
+            actions: lub.actions.join(","),
+            oil_line1: lub.oilLine1 || null,
+            oil_line2: lub.oilLine2 || null,
+            filter_line1: lub.filterLine1 || null,
+            filter_line2: lub.filterLine2 || null,
+            observation: lub.observation || null,
+            created_at: p.createdAt || new Date().toISOString(),
+          }),
         });
+        if (!rLub.ok) {
+          console.error("Falha ao sincronizar lubrificação:", rLub.status, await rLub.text());
+          return false;
+        }
       }
       return true;
     }
+
+    console.warn("Tipo de evento desconhecido:", event.type);
+    return false;
   } catch (e) {
     console.error("Supabase sync error:", e);
     return false;
   }
-  return false;
 }
 
 async function processPendingSyncEvents() {
-  if (!navigator.onLine) { updateDbSyncStatus(); return; }
+  if (!navigator.onLine) {
+    updateDbSyncStatus();
+    return;
+  }
+
   let queue = getPendingSyncEvents();
+  if (!Array.isArray(queue)) queue = [];
+  queue = queue.filter((ev) => ev && typeof ev === "object" && ev.type && ev.payload);
+  savePendingSyncEvents(queue);
+
   while (queue.length) {
     const ok = await syncToSupabase(queue[0]);
     if (!ok) break;
     queue = queue.slice(1);
     savePendingSyncEvents(queue);
   }
+
   updateDbSyncStatus();
 }
 
