@@ -153,12 +153,20 @@
           aria-labelledby="comboio-heading"
         >
         <section id="comboio-section" class="card">
-          <h2 id="comboio-heading">Comboio — recebimento no campo</h2>
+          <h2 id="comboio-heading">Comboio — abastecimento movel</h2>
         <p class="subtitle">
           Numero de ordem e gerado ao salvar (ex.: COM-00001). Para outra atividade (ex.: completar
           cardan), abra um novo lancamento — uma ordem por servico.
         </p>
         <p id="next-order-preview" class="connection-status online" aria-live="polite"></p>
+        <div id="comboio-type-selector" class="form-section">
+          <p class="form-section-kicker">Tipo de servico</p>
+          <div class="mode-switch" role="group">
+            <button type="button" id="tipo-abastecimento" class="mode-btn active">Abastecimento</button>
+            <button type="button" id="tipo-lubrificacao" class="mode-btn">Lubrificacao</button>
+            <button type="button" id="tipo-ambos" class="mode-btn">Ambos</button>
+          </div>
+        </div>
         <form id="receipt-form" class="form-stack">
           <div class="form-section">
             <p class="form-section-kicker">Quando e frota</p>
@@ -185,13 +193,21 @@
                   required
                 />
               </label>
+              <label class="field-span-full">
+                Horimetro/Odometro
+                <input
+                  id="receiptHourmeter"
+                  name="receiptHourmeter"
+                  placeholder="Ex.: 3210 h ou 124500 km"
+                />
+              </label>
             </div>
           </div>
           <div class="form-section">
             <p class="form-section-kicker">Combustivel recebido</p>
             <div class="form-grid">
               <label>
-                Combustivel recebido
+                Tipo de combustivel
                 <select id="receiptFuelType" name="receiptFuelType" required>
                   <option value="">Selecione</option>
                 </select>
@@ -274,7 +290,7 @@
               placeholder="Descreva o motivo"
             ></textarea>
           </label>
-          <button type="submit">Registrar recebimento no comboio</button>
+          <button type="submit">Registrar servico no comboio</button>
         </form>
       </section>
 
@@ -321,7 +337,7 @@
       </div>
     </main>
 
-    <script src="./config.js?v=19"></script>
-    <script src="./app.js?v=19"></script>
+    <script src="./config.js?v=20"></script>
+    <script src="./app.js?v=20"></script>
   </body>
 </html>
