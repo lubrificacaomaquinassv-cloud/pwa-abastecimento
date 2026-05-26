@@ -504,7 +504,9 @@ receiptForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(receiptForm);
   const fuelType = String(formData.get("receiptFuelType") || "").trim();
-  if (!RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
+  const comboioMode = receiptForm.dataset.comboioMode || "abastecimento";
+  const needsFuel = comboioMode === "abastecimento" || comboioMode === "ambos";
+  if (needsFuel && !RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
   const lubeActions = formData.getAll("lubeActions");
   const requiresObservation =
     lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel");
@@ -572,7 +574,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=21";
+const SW_URL = "./sw.js?v=22";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
