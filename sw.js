@@ -1,6 +1,6 @@
-const CACHE_NAME = "comboio-posto-v23";
+const CACHE_NAME = "comboio-posto-v22";
 /** Bump with index.html script query + app.js SW_URL when config/sync logic changes. */
-const ASSET_VER = "23";
+const ASSET_VER = "22";
 const APP_SHELL = [
   "./index.html",
   `./config.js?v=${ASSET_VER}`,
@@ -8,6 +8,7 @@ const APP_SHELL = [
   `./app.js?v=${ASSET_VER}`,
   "./manifest.webmanifest",
 ];
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -16,6 +17,7 @@ self.addEventListener("install", (event) => {
   );
   self.skipWaiting();
 });
+
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -31,6 +33,7 @@ self.addEventListener("activate", (event) => {
   );
   self.clients.claim();
 });
+
 function isHtmlNavigation(request) {
   if (request.mode === "navigate") return true;
   const accept = request.headers.get("accept") || "";
@@ -43,6 +46,7 @@ function isHtmlNavigation(request) {
   }
   return false;
 }
+
 function shouldBypassCache(request) {
   try {
     const p = new URL(request.url).pathname;
@@ -51,8 +55,10 @@ function shouldBypassCache(request) {
     return false;
   }
 }
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
   if (isHtmlNavigation(event.request)) {
     event.respondWith(
       fetch(event.request)
@@ -67,6 +73,7 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
+
   if (shouldBypassCache(event.request)) {
     event.respondWith(
       fetch(event.request, { cache: "no-store" })
@@ -81,6 +88,7 @@ self.addEventListener("fetch", (event) => {
     );
     return;
   }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return (
