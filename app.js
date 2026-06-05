@@ -2,14 +2,27 @@ const STORAGE_KEY = "comboio-fuel-records";
 const RECEIPTS_STORAGE_KEY = "comboio-fuel-receipts";
 const PENDING_SYNC_STORAGE_KEY = "comboio-pending-sync-events";
 const ORDER_SEQ_KEY = "comboio-order-seq";
-const POST_FUEL_OPTIONS = [
-  "Gasolina Comum",
-  "Etanol Comum",
-  "Diesel S-10",
-  "Diesel S-500 Aditivado",
-  "Diesel S-500 Comum",
+/** Combustiveis padronizados (jun/2026) — mesma grafia em todo o sistema. */
+const FUEL_S500 = "DIESEL S-500 ADITIVADO";
+const FUEL_S10 = "DIESEL S-10";
+const FUEL_GASOLINA = "GASOLINA COMUM";
+
+const POST_FUEL_OPTIONS = [FUEL_S500, FUEL_S10, FUEL_GASOLINA];
+const RECEIPT_FUEL_OPTIONS = [FUEL_S500];
+
+/** Frota leve na sede — codigo aprovado pela gerencia (nao digitar). */
+const POSTO_FLEET_OPTIONS = [
+  { code: "SMC7D44", model: "KWID" },
+  { code: "SMC8I91", model: "KWID" },
+  { code: "SLZ8I55", model: "KWID" },
+  { code: "RWG5D98", model: "TORO" },
+  { code: "SMA6B13", model: "TORO" },
+  { code: "TMH8J55", model: "SAVEIRO" },
+  { code: "RUQ3C15", model: "VAN" },
+  { code: "SML2C36", model: "RANGER" },
+  { code: "FJY3A25", model: "GOL" },
 ];
-const RECEIPT_FUEL_OPTIONS = [...POST_FUEL_OPTIONS];
+const POSTO_FLEET_CODES = POSTO_FLEET_OPTIONS.map((item) => item.code);
 // Sync direto no Supabase (sem backend intermediario)
 
 const form = document.getElementById("fuel-form");
@@ -35,6 +48,7 @@ const nextOrderPreview = document.getElementById("next-order-preview");
 const connectionStatus = document.getElementById("connection-status");
 const dbSyncStatus = document.getElementById("db-sync-status");
 const fuelTypeSelect = document.getElementById("fuelType");
+const vehicleSelect = document.getElementById("vehicle");
 const receiptFuelTypeSelect = document.getElementById("receiptFuelType");
 const fuelSettingsForm = document.getElementById("fuel-settings-form");
 const newFuelOptionInput = document.getElementById("new-fuel-option");
@@ -81,6 +95,7 @@ function enterWorkspace(mode) {
   }
   document.title = isPosto ? "Posto | Abastecimento frota" : "Comboio | Abastecimento frota";
   fillFuelSelects();
+  fillVehicleSelect();
   renderFuelOptionsSettings();
   window.scrollTo(0, 0);
 }
@@ -372,6 +387,21 @@ function renderFuelOptionsSettings() {
   });
 }
 
+function fillVehicleSelect() {
+  if (!vehicleSelect) return;
+  const selected = vehicleSelect.value;
+  vehicleSelect.innerHTML = "<option value=''>Selecione a frota</option>";
+  POSTO_FLEET_OPTIONS.forEach(({ code, model }) => {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = `${code} · ${model}`;
+    vehicleSelect.appendChild(option);
+  });
+  if (selected && POSTO_FLEET_CODES.includes(selected)) {
+    vehicleSelect.value = selected;
+  }
+}
+
 function fillFuelSelects() {
   if (!fuelTypeSelect || !receiptFuelTypeSelect) {
     console.warn("fillFuelSelects: select de combustivel nao encontrado no DOM.");
@@ -474,11 +504,13 @@ form.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(form);
   const fuelType = String(formData.get("fuelType") || "").trim();
+  const vehicle = String(formData.get("vehicle") || "").trim();
   if (!POST_FUEL_OPTIONS.includes(fuelType)) return;
+  if (!POSTO_FLEET_CODES.includes(vehicle)) return;
 
   const record = {
     id: makeId(),
-    vehicle: formData.get("vehicle"),
+    vehicle,
     fuelType,
     liters: Number(formData.get("liters")).toFixed(1),
     operatorDriver: String(formData.get("operatorDriver") || "").trim(),
@@ -496,6 +528,7 @@ form.addEventListener("submit", (event) => {
   form.reset();
   fuelDateTimeInput.value = getNowLocalDateTimeInputValue();
   fillFuelSelects();
+  fillVehicleSelect();
   renderFuelOptionsSettings();
   renderAll();
 });
@@ -574,7 +607,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=22";
+const SW_URL = "./sw.js?v=23";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
@@ -590,6 +623,7 @@ if ("serviceWorker" in navigator) {
 }
 
 fillFuelSelects();
+fillVehicleSelect();
 renderFuelOptionsSettings();
 setDefaultDateTimes();
 toggleLubeObservationField();

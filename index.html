@@ -82,12 +82,14 @@
               <p class="form-section-kicker">Frota e combustivel</p>
               <div class="form-grid">
                 <label>
-                  Frota/Equipamento
-                  <input id="vehicle" name="vehicle" required placeholder="Ex.: PATROLA-07" />
+                  Frota (veiculo leve)
+                  <select id="vehicle" name="vehicle" class="catalog-select" required>
+                    <option value="">Selecione a frota</option>
+                  </select>
                 </label>
                 <label>
                   Combustivel
-                  <select id="fuelType" name="fuelType" required>
+                  <select id="fuelType" name="fuelType" class="catalog-select" required>
                     <option value="">Selecione</option>
                   </select>
                 </label>
@@ -337,7 +339,7 @@
       </div>
     </main>
 
-    <script src="./config.js?v=22"></script>
-    <script src="./app.js?v=22"></script>
+    <script src="./config.js?v=23"></script>
+    <script src="./app.js?v=23"></script>
   </body>
 </html>
