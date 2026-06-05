@@ -18,6 +18,7 @@ const POSTO_FLEET_LEVE = [
   { code: "RUQ3C15", model: "VAN" },
   { code: "SML2C36", model: "RANGER" },
   { code: "FJY3A25", model: "GOL" },
+  { code: "OOH4A79", model: "AMAROK" },
 ];
 
 /** Frota operacional no posto — planilha FROTA_POSTO.xlsx (gerencia, jun/2026). */
@@ -452,7 +453,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=25";
+const SW_URL = "./sw.js?v=26";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
