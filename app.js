@@ -10,8 +10,8 @@ const FUEL_GASOLINA = "GASOLINA COMUM";
 const POST_FUEL_OPTIONS = [FUEL_S500, FUEL_S10, FUEL_GASOLINA];
 const RECEIPT_FUEL_OPTIONS = [FUEL_S500];
 
-/** Frota leve na sede — codigo aprovado pela gerencia (nao digitar). */
-const POSTO_FLEET_OPTIONS = [
+/** Veiculos leves — placa aprovada pela gerencia (nao digitar). */
+const POSTO_FLEET_LEVE = [
   { code: "SMC7D44", model: "KWID" },
   { code: "SMC8I91", model: "KWID" },
   { code: "SLZ8I55", model: "KWID" },
@@ -22,8 +22,72 @@ const POSTO_FLEET_OPTIONS = [
   { code: "SML2C36", model: "RANGER" },
   { code: "FJY3A25", model: "GOL" },
 ];
-const POSTO_FLEET_CODES = POSTO_FLEET_OPTIONS.map((item) => item.code);
-// Sync direto no Supabase (sem backend intermediario)
+
+/** Frota operacional no posto — planilha FROTA_POSTO.xlsx (gerencia, jun/2026). */
+const POSTO_FROTA_OPERACIONAL = [
+  { code: "3385", model: "CARGO 1615" },
+  { code: "3315", model: "MB - 2426" },
+  { code: "3355", model: "MB - 2638" },
+  { code: "3383", model: "MB - 2638" },
+  { code: "3267", model: "MB - 2831 AXOR" },
+  { code: "3381", model: "MB - 3340 AXOR" },
+  { code: "3316", model: "MB 1016" },
+  { code: "3349", model: "MB 1620" },
+  { code: "3272", model: "PA VOLVO" },
+  { code: "3320", model: "HARVESTER" },
+  { code: "3362", model: "GERADOR 13,3 KVA" },
+  { code: "3365", model: "GERADOR 13,3" },
+  { code: "3359", model: "GERADOR B4T 8000" },
+  { code: "3372", model: "GERADOR B4T12000E3" },
+  { code: "3321", model: "GERADOR MOVEL 83 KVA" },
+  { code: "3149", model: "GERADOR SEDE" },
+  { code: "3150", model: "GERADOR VIVEIRO" },
+  { code: "3347", model: "CRF 250F" },
+  { code: "3353", model: "CRF 250F" },
+  { code: "3373", model: "CRF 250F" },
+  { code: "3401", model: "XRE 160 BROS" },
+  { code: "3379", model: "XRE 190" },
+  { code: "3367", model: "XRE 300" },
+  { code: "3392", model: "XRE 300" },
+  { code: "3285", model: "PATROL G930" },
+  { code: "3391", model: "QUADRICICLO" },
+  { code: "3072", model: "REBOQUE" },
+  { code: "3019", model: "TRATOR AGRALE" },
+  { code: "3368", model: "A114L 4X4" },
+  { code: "3369", model: "A114L 4X4" },
+  { code: "3337", model: "BH 180 4X4" },
+  { code: "3336", model: "BH 180 HI-FLOW 4X4" },
+  { code: "3350", model: "BH 224I" },
+  { code: "3396", model: "T6" },
+  { code: "3380", model: "T7 245" },
+  { code: "3402", model: "T7 260" },
+  { code: "3393", model: "TL5. 100" },
+  { code: "3394", model: "TL5. 100" },
+  { code: "3345", model: "PA SDLG L938" },
+  { code: "3354", model: "PA SDLG L936" },
+  { code: "3283", model: "MF 275" },
+  { code: "3281", model: "MF 4290" },
+  { code: "3014", model: "TMO 1580" },
+  { code: "3305", model: "BM 110" },
+  { code: "3306", model: "BM 110" },
+  { code: "3363", model: "BH 224" },
+  { code: "3307", model: "BM 125" },
+];
+
+const POSTO_VEHICLE_GROUPS = [
+  { label: "Veiculos leves (placa)", items: POSTO_FLEET_LEVE },
+  { label: "Frota operacional (codigo)", items: POSTO_FROTA_OPERACIONAL },
+];
+
+const POSTO_VEHICLE_CODES = POSTO_VEHICLE_GROUPS.flatMap((g) => g.items.map((i) => i.code));
+const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
+
+/** URL POST de sync: Node usa /lancamentos; Google Apps Script usa so o URL /exec. */
+function syncPostUrl() {
+  if (!API_BASE_URL) return "";
+  if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
+  return `${API_BASE_URL}/lancamentos`;
+}
 
 const form = document.getElementById("fuel-form");
 const receiptForm = document.getElementById("receipt-form");
@@ -82,7 +146,6 @@ function enterWorkspace(mode) {
   attachTrailingBlocks(mode);
   if (!isPosto) {
     updateOrderPreview();
-    setTimeout(initComboioTypeSelector, 0);
   }
   areaLabel.textContent = isPosto
     ? "Fluxo do posto (escolhido no inicio). Nada do comboio nesta tela."
@@ -149,49 +212,6 @@ function toggleLubeObservationField() {
   if (!requiresObservation) lubeObservationInput.value = "";
 }
 
-function initComboioTypeSelector() {
-  const btnAbast  = document.getElementById("tipo-abastecimento");
-  const btnLube   = document.getElementById("tipo-lubrificacao");
-  const btnAmbos  = document.getElementById("tipo-ambos");
-  if (!btnAbast) return;
-
-  const secCombustivel = receiptForm.querySelector(".form-section:nth-child(2)");  // combustivel
-  const secLocalServico = receiptForm.querySelector(".form-section:nth-child(3)"); // local
-  const secLube = receiptForm.querySelectorAll(".form-section")[3];               // lubrificacao
-  const secOleo = receiptForm.querySelectorAll(".form-section")[4];               // oleo/filtro
-
-  function setMode(mode) {
-    // reset buttons
-    [btnAbast, btnLube, btnAmbos].forEach(b => b.classList.remove("active"));
-
-    const showComb  = mode === "abastecimento" || mode === "ambos";
-    const showLube  = mode === "lubrificacao"  || mode === "ambos";
-
-    if (secCombustivel) secCombustivel.style.display = showComb ? "" : "none";
-    if (secLube)        secLube.style.display        = showLube ? "" : "none";
-    if (secOleo)        secOleo.style.display        = showLube ? "" : "none";
-
-    // campos obrigatorios
-    const fuelSel = document.getElementById("receiptFuelType");
-    const liters  = document.getElementById("receiptLiters");
-    if (fuelSel) fuelSel.required = showComb;
-    if (liters)  liters.required  = showComb;
-
-    receiptForm.dataset.comboioMode = mode;
-
-    if (mode === "abastecimento") btnAbast.classList.add("active");
-    else if (mode === "lubrificacao") btnLube.classList.add("active");
-    else btnAmbos.classList.add("active");
-  }
-
-  btnAbast.addEventListener("click", () => setMode("abastecimento"));
-  btnLube.addEventListener("click",  () => setMode("lubrificacao"));
-  btnAmbos.addEventListener("click", () => setMode("ambos"));
-
-  setMode("abastecimento"); // padrao
-}
-
-
 function makeId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -244,6 +264,11 @@ function savePendingSyncEvents(events) {
 
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
+  if (!API_BASE_URL) {
+    dbSyncStatus.textContent = "Banco nao configurado (defina window.APP_API_BASE_URL).";
+    dbSyncStatus.className = "connection-status offline";
+    return;
+  }
   if (pending === 0) {
     dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia.";
     dbSyncStatus.className = "connection-status online";
@@ -253,91 +278,33 @@ function updateDbSyncStatus(customText) {
   dbSyncStatus.className = "connection-status offline";
 }
 
-async function syncToSupabase(event) {
-  const SB_URL = window.SUPABASE_URL || "https://azhpxhrwhegfysoeqmft.supabase.co";
-  const SB_KEY = window.SUPABASE_ANON_KEY || "";
-  const headers = {
-    "Content-Type": "application/json",
-    "apikey": SB_KEY,
-    "Authorization": "Bearer " + SB_KEY,
-    "Prefer": "return=minimal"
-  };
-  const p = event.payload;
-
-  try {
-    if (event.type === "abastecimento") {
-      const r = await fetch(SB_URL + "/rest/v1/posto", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          vehicle:    p.vehicle              || null,
-          fuel_type:  p.fuelType             || null,
-          liters:     parseFloat(p.liters)   || null,
-          operator:   p.operatorDriver       || null,
-          hourmeter:  p.hourmeterOdometer    || null,
-          work_front: p.workFront            || null,
-          work_type:  p.workType             || null,
-          created_at: p.createdAt            || new Date().toISOString()
-        })
-      });
-      return r.ok || r.status === 201;
-    }
-
-    if (event.type === "recebimento") {
-      const r = await fetch(SB_URL + "/rest/v1/comboio", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          order_number: p.orderNumber          || null,
-          tipo_servico: "abastecimento",
-          vehicle:      p.vehicle              || null,
-          fuel_type:    p.fuelType             || null,
-          liters:       parseFloat(p.liters)   || null,
-          operator:     p.operatorDriver       || null,
-          location:     p.location             || null,
-          hourmeter:    p.hourmeterOdometer    || null,
-          work_type:    p.workType             || null,
-          created_at:   p.createdAt            || new Date().toISOString()
-        })
-      });
-      if (!r.ok && r.status !== 201) return false;
-
-      const lub = p.lubrication;
-      if (lub && lub.actions && lub.actions.length > 0) {
-        await fetch(SB_URL + "/rest/v1/lubrificacao", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            order_number: p.orderNumber      || null,
-            vehicle:      p.vehicle          || null,
-            location:     p.location         || null,
-            actions:      lub.actions.join(","),
-            oil_line1:    lub.oilLine1        || null,
-            oil_line2:    lub.oilLine2        || null,
-            filter_line1: lub.filterLine1     || null,
-            filter_line2: lub.filterLine2     || null,
-            observation:  lub.observation     || null,
-            created_at:   p.createdAt         || new Date().toISOString()
-          })
-        });
-      }
-      return true;
-    }
-  } catch (e) {
-    console.error("Supabase sync error:", e);
-    return false;
-  }
-  return false;
-}
-
 async function processPendingSyncEvents() {
-  if (!navigator.onLine) { updateDbSyncStatus(); return; }
+  if (!API_BASE_URL || !navigator.onLine) {
+    updateDbSyncStatus();
+    return;
+  }
   let queue = getPendingSyncEvents();
   while (queue.length) {
-    const ok = await syncToSupabase(queue[0]);
-    if (!ok) break;
-    queue = queue.slice(1);
-    savePendingSyncEvents(queue);
+    const event = queue[0];
+    try {
+      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
+      const response = await fetch(url);
+      const text = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        break;
+      }
+      if (!data || data.ok === false) {
+        console.error("Sync recusado:", data && data.error);
+        break;
+      }
+      queue = queue.slice(1);
+      savePendingSyncEvents(queue);
+    } catch {
+      break;
+    }
   }
   updateDbSyncStatus();
 }
@@ -350,6 +317,10 @@ function enqueueSyncEvent(type, payload) {
     payload,
     createdAt: new Date().toISOString(),
   };
+  const shSecret = typeof window !== "undefined" && window.SHEETS_SYNC_SECRET;
+  if (shSecret && String(shSecret).trim()) {
+    ev.secret = String(shSecret).trim();
+  }
   queue.push(ev);
   savePendingSyncEvents(queue);
   updateDbSyncStatus();
@@ -374,15 +345,21 @@ function getUniqueFuelOptions() {
 function renderFuelOptionsSettings() {
   const options = getUniqueFuelOptions();
   fuelOptionsList.innerHTML = "";
+
   if (!options.length) {
     fuelOptionsList.innerHTML =
       "<li class='fuel-option-item'><span>Nenhum combustivel cadastrado.</span></li>";
     return;
   }
+
   options.forEach((fuel) => {
     const item = document.createElement("li");
     item.className = "fuel-option-item";
-    item.innerHTML = `<span>${fuel}</span><span>Regra fixa</span>`;
+    item.innerHTML = `
+      <span>${fuel}</span>
+      <span>Regra fixa</span>
+    `;
+
     fuelOptionsList.appendChild(item);
   });
 }
@@ -391,13 +368,19 @@ function fillVehicleSelect() {
   if (!vehicleSelect) return;
   const selected = vehicleSelect.value;
   vehicleSelect.innerHTML = "<option value=''>Selecione a frota</option>";
-  POSTO_FLEET_OPTIONS.forEach(({ code, model }) => {
-    const option = document.createElement("option");
-    option.value = code;
-    option.textContent = `${code} · ${model}`;
-    vehicleSelect.appendChild(option);
+  POSTO_VEHICLE_GROUPS.forEach(({ label, items }) => {
+    if (!items.length) return;
+    const group = document.createElement("optgroup");
+    group.label = label;
+    items.forEach(({ code, model }) => {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = `${code} · ${model}`;
+      group.appendChild(option);
+    });
+    vehicleSelect.appendChild(group);
   });
-  if (selected && POSTO_FLEET_CODES.includes(selected)) {
+  if (selected && POSTO_VEHICLE_CODES.includes(selected)) {
     vehicleSelect.value = selected;
   }
 }
@@ -469,11 +452,15 @@ function renderRecentComboio() {
     const li = document.createElement("li");
     li.className = "recent-item recent-item-4";
     li.setAttribute("role", "row");
+    const ord = escapeHtml(String(receipt.orderNumber || "-"));
+    const veh = escapeHtml(String(receipt.vehicle || "-"));
+    const fuel = escapeHtml(String(receipt.fuelType || "-"));
+    const qty = escapeHtml(String(receipt.liters || "0"));
     li.innerHTML = `
-      <span class="recent-cell">${escapeHtml(String(receipt.orderNumber || "-"))}</span>
-      <span class="recent-cell">${escapeHtml(String(receipt.vehicle || "-"))}</span>
-      <span class="recent-cell">${escapeHtml(String(receipt.fuelType || "-"))}</span>
-      <span class="recent-cell">${escapeHtml(String(receipt.liters || "0"))} L</span>
+      <span class="recent-cell">${ord}</span>
+      <span class="recent-cell">${veh}</span>
+      <span class="recent-cell">${fuel}</span>
+      <span class="recent-cell">${qty} L</span>
     `;
     recentComboioList.appendChild(li);
   });
@@ -506,7 +493,7 @@ form.addEventListener("submit", (event) => {
   const fuelType = String(formData.get("fuelType") || "").trim();
   const vehicle = String(formData.get("vehicle") || "").trim();
   if (!POST_FUEL_OPTIONS.includes(fuelType)) return;
-  if (!POSTO_FLEET_CODES.includes(vehicle)) return;
+  if (!POSTO_VEHICLE_CODES.includes(vehicle)) return;
 
   const record = {
     id: makeId(),
@@ -537,9 +524,7 @@ receiptForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(receiptForm);
   const fuelType = String(formData.get("receiptFuelType") || "").trim();
-  const comboioMode = receiptForm.dataset.comboioMode || "abastecimento";
-  const needsFuel = comboioMode === "abastecimento" || comboioMode === "ambos";
-  if (needsFuel && !RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
+  if (!RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
   const lubeActions = formData.getAll("lubeActions");
   const requiresObservation =
     lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel");
@@ -553,15 +538,11 @@ receiptForm.addEventListener("submit", (event) => {
 
   const orderNumber = assignNextOrderNumber();
   const vehicle = String(formData.get("receiptVehicle") || "").trim();
-  const operatorDriverComboio = String(formData.get("receiptOperatorDriver") || "").trim();
-  const hourmeterComboio = String(formData.get("receiptHourmeter") || "").trim();
 
   const receipt = {
     id: makeId(),
     orderNumber,
     vehicle,
-    operatorDriver: operatorDriverComboio,
-    hourmeterOdometer: hourmeterComboio,
     fuelType,
     liters: Number(formData.get("receiptLiters")).toFixed(1),
     location: String(formData.get("receiptLocation") || "").trim(),
@@ -607,7 +588,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=23";
+const SW_URL = "./sw.js?v=21";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
