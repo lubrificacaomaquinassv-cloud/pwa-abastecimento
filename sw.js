@@ -1,6 +1,6 @@
-const CACHE_NAME = "comboio-posto-v21";
+const CACHE_NAME = "comboio-posto-v24";
 /** Bump with index.html script query + app.js SW_URL when config/sync logic changes. */
-const ASSET_VER = "21";
+const ASSET_VER = "24";
 const APP_SHELL = [
   "./index.html",
   `./config.js?v=${ASSET_VER}`,
@@ -58,6 +58,12 @@ function shouldBypassCache(request) {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+
+  try {
+    if (new URL(event.request.url).origin !== self.location.origin) return;
+  } catch {
+    return;
+  }
 
   if (isHtmlNavigation(event.request)) {
     event.respondWith(
