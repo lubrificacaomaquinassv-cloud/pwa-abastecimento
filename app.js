@@ -21,7 +21,6 @@ const POSTO_FLEET_OPTIONS = [
   { code: "RUQ3C15", model: "VAN" },
   { code: "SML2C36", model: "RANGER" },
   { code: "FJY3A25", model: "GOL" },
-  { code: "3385", model: CARGO 1615" },
 ];
 const POSTO_FLEET_CODES = POSTO_FLEET_OPTIONS.map((item) => item.code);
 // Sync direto no Supabase (sem backend intermediario)
