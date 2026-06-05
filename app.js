@@ -1,14 +1,11 @@
 const STORAGE_KEY = "comboio-fuel-records";
-const RECEIPTS_STORAGE_KEY = "comboio-fuel-receipts";
 const PENDING_SYNC_STORAGE_KEY = "comboio-pending-sync-events";
-const ORDER_SEQ_KEY = "comboio-order-seq";
+
 /** Combustiveis padronizados (jun/2026) — mesma grafia em todo o sistema. */
 const FUEL_S500 = "DIESEL S-500 ADITIVADO";
 const FUEL_S10 = "DIESEL S-10";
 const FUEL_GASOLINA = "GASOLINA COMUM";
-
 const POST_FUEL_OPTIONS = [FUEL_S500, FUEL_S10, FUEL_GASOLINA];
-const RECEIPT_FUEL_OPTIONS = [FUEL_S500];
 
 /** Veiculos leves — placa aprovada pela gerencia (nao digitar). */
 const POSTO_FLEET_LEVE = [
@@ -74,94 +71,128 @@ const POSTO_FROTA_OPERACIONAL = [
   { code: "3307", model: "BM 125" },
 ];
 
+/** Itens operacionais avulsos (gasolina/equipamentos na sede). */
+const POSTO_FROTA_AVULSOS = [
+  { code: "DRONE", model: "DRONE" },
+  { code: "ROCADEIRA", model: "ROCADEIRA" },
+  { code: "MOTOPODA", model: "MOTOPODA" },
+  { code: "MOTOSERRA", model: "MOTOSERRA" },
+  { code: "GALAO", model: "GALAO" },
+  { code: "MICHEL", model: "MICHEL" },
+  { code: "EDIVALDO", model: "EDIVALDO" },
+  { code: "LUIZ", model: "LUIZ" },
+  { code: "AJM", model: "AJM" },
+];
+
 const POSTO_VEHICLE_GROUPS = [
   { label: "Veiculos leves (placa)", items: POSTO_FLEET_LEVE },
   { label: "Frota operacional (codigo)", items: POSTO_FROTA_OPERACIONAL },
+  { label: "Itens operacionais (avulsos)", items: POSTO_FROTA_AVULSOS },
 ];
 
 const POSTO_VEHICLE_CODES = POSTO_VEHICLE_GROUPS.flatMap((g) => g.items.map((i) => i.code));
 const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
+const SUPABASE_URL = (window.SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || "";
 
-/** URL POST de sync: Node usa /lancamentos; Google Apps Script usa so o URL /exec. */
+function usesSupabaseSync() {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
+
+function syncBackendReady() {
+  return usesSupabaseSync() || Boolean(API_BASE_URL);
+}
+
 function syncPostUrl() {
   if (!API_BASE_URL) return "";
   if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
   return `${API_BASE_URL}/lancamentos`;
 }
 
+function supabaseHeaders(prefer) {
+  const headers = {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    "Content-Type": "application/json",
+  };
+  if (prefer) headers.Prefer = prefer;
+  return headers;
+}
+
+function mapPostoRow(payload, createdAt) {
+  return {
+    id: payload.id,
+    vehicle: String(payload.vehicle || "").trim(),
+    fuel_type: String(payload.fuelType || "").trim(),
+    liters: Number(payload.liters),
+    operator_driver: String(payload.operatorDriver || "").trim() || null,
+    hourmeter: String(payload.hourmeterOdometer || "").trim() || null,
+    work_front: String(payload.workFront || "").trim() || null,
+    work_type: String(payload.workType || "").trim() || null,
+    created_at: payload.createdAt || createdAt,
+    synced_at: new Date().toISOString(),
+  };
+}
+
+async function supabaseInsertPosto(row) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/posto`, {
+    method: "POST",
+    headers: supabaseHeaders("return=minimal"),
+    body: JSON.stringify(row),
+  });
+  if (response.ok || response.status === 409) return { ok: true };
+  return { ok: false, error: await response.text() };
+}
+
+async function syncEventToSupabase(event) {
+  if (event.type !== "abastecimento") {
+    return { ok: false, error: "tipo de evento invalido para posto" };
+  }
+  return supabaseInsertPosto(mapPostoRow(event.payload || {}, event.createdAt));
+}
+
+async function syncEventToLegacyApi(event) {
+  const url = syncPostUrl();
+  if (!url) return { ok: false, error: "API nao configurada" };
+
+  const bodyObj = { ...event };
+  const sec = typeof window.SHEETS_SYNC_SECRET === "string" ? window.SHEETS_SYNC_SECRET.trim() : "";
+  if (sec) bodyObj.secret = sec;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bodyObj),
+  });
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return { ok: false, error: text || "resposta invalida" };
+  }
+  if (!response.ok || !data || data.ok === false) {
+    return { ok: false, error: (data && data.error) || text };
+  }
+  return { ok: true };
+}
+
+async function sendSyncEvent(event) {
+  if (usesSupabaseSync()) return syncEventToSupabase(event);
+  return syncEventToLegacyApi(event);
+}
+
 const form = document.getElementById("fuel-form");
-const receiptForm = document.getElementById("receipt-form");
-const workspacePosto = document.getElementById("workspace-posto");
-const workspaceComboio = document.getElementById("workspace-comboio");
-const trailingConfig = document.getElementById("trailing-config");
-const trailingInforme = document.getElementById("trailing-informe");
-const gateScreen = document.getElementById("gate-screen");
-const appScreen = document.getElementById("app-screen");
-const gatePostoButton = document.getElementById("gate-posto");
-const gateComboioButton = document.getElementById("gate-comboio");
-const changeAreaButton = document.getElementById("change-area");
-const areaLabel = document.getElementById("area-label");
-const appWorkflowHeading = document.getElementById("app-workflow-heading");
-const appWorkflowSub = document.getElementById("app-workflow-sub");
-const DOCUMENT_TITLE_DEFAULT = "CONTROLE DE ABASTECIMENTO DE FROTA";
 const fuelDateTimeInput = document.getElementById("fuelDateTime");
-const receiptDateTimeInput = document.getElementById("receiptDateTime");
 const recentPostoList = document.getElementById("recent-posto-list");
-const recentComboioList = document.getElementById("recent-comboio-list");
-const nextOrderPreview = document.getElementById("next-order-preview");
 const connectionStatus = document.getElementById("connection-status");
 const dbSyncStatus = document.getElementById("db-sync-status");
 const fuelTypeSelect = document.getElementById("fuelType");
 const vehicleSelect = document.getElementById("vehicle");
-const receiptFuelTypeSelect = document.getElementById("receiptFuelType");
 const fuelSettingsForm = document.getElementById("fuel-settings-form");
 const newFuelOptionInput = document.getElementById("new-fuel-option");
 const fuelOptionsList = document.getElementById("fuel-options-list");
-const lubeObservationWrap = document.getElementById("lube-observation-wrap");
-const lubeObservationInput = document.getElementById("lubeObservation");
-
-function attachTrailingBlocks(mode) {
-  if (mode === "posto") {
-    workspacePosto.appendChild(trailingConfig);
-    workspacePosto.appendChild(trailingInforme);
-  } else {
-    workspacePosto.appendChild(trailingConfig);
-    workspaceComboio.appendChild(trailingInforme);
-  }
-}
-
-function showGate() {
-  document.title = DOCUMENT_TITLE_DEFAULT;
-  gateScreen.classList.remove("hidden");
-  appScreen.classList.add("hidden");
-  window.scrollTo(0, 0);
-}
-
-function enterWorkspace(mode) {
-  gateScreen.classList.add("hidden");
-  appScreen.classList.remove("hidden");
-  const isPosto = mode === "posto";
-  workspacePosto.classList.toggle("hidden", !isPosto);
-  workspaceComboio.classList.toggle("hidden", isPosto);
-  attachTrailingBlocks(mode);
-  if (!isPosto) {
-    updateOrderPreview();
-  }
-  areaLabel.textContent = isPosto
-    ? "Fluxo do posto (escolhido no inicio). Nada do comboio nesta tela."
-    : "Fluxo do comboio (escolhido no inicio). Nada do posto nesta tela.";
-  if (appWorkflowHeading && appWorkflowSub) {
-    appWorkflowHeading.textContent = isPosto ? "Posto de abastecimento" : "Comboio";
-    appWorkflowSub.textContent = isPosto
-      ? "Voce escolheu posto no inicio. Abaixo so entra lancamento do posto fixo."
-      : "Voce escolheu comboio no inicio. Abaixo so entra recebimento e servico no campo.";
-  }
-  document.title = isPosto ? "Posto | Abastecimento frota" : "Comboio | Abastecimento frota";
-  fillFuelSelects();
-  fillVehicleSelect();
-  renderFuelOptionsSettings();
-  window.scrollTo(0, 0);
-}
 
 function getNowLocalDateTimeInputValue() {
   const now = new Date();
@@ -181,35 +212,6 @@ function setDefaultDateTimes() {
   if (!fuelDateTimeInput.value) {
     fuelDateTimeInput.value = getNowLocalDateTimeInputValue();
   }
-  if (!receiptDateTimeInput.value) {
-    receiptDateTimeInput.value = getNowLocalDateTimeInputValue();
-  }
-}
-
-function peekNextOrderNumber() {
-  const n = Number(localStorage.getItem(ORDER_SEQ_KEY) || "0") + 1;
-  return `COM-${String(n).padStart(5, "0")}`;
-}
-
-function assignNextOrderNumber() {
-  const n = Number(localStorage.getItem(ORDER_SEQ_KEY) || "0") + 1;
-  localStorage.setItem(ORDER_SEQ_KEY, String(n));
-  return `COM-${String(n).padStart(5, "0")}`;
-}
-
-function updateOrderPreview() {
-  nextOrderPreview.textContent = `Proxima ordem ao salvar: ${peekNextOrderNumber()}`;
-}
-
-function toggleLubeObservationField() {
-  const actions = [...receiptForm.querySelectorAll('input[name="lubeActions"]:checked')].map(
-    (node) => node.value
-  );
-  const requiresObservation =
-    actions.includes("corretiva") || actions.includes("completar_nivel");
-  lubeObservationWrap.classList.toggle("hidden", !requiresObservation);
-  lubeObservationInput.required = requiresObservation;
-  if (!requiresObservation) lubeObservationInput.value = "";
 }
 
 function makeId() {
@@ -233,20 +235,6 @@ function saveRecords(records) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
 
-function getReceipts() {
-  const raw = localStorage.getItem(RECEIPTS_STORAGE_KEY);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function saveReceipts(receipts) {
-  localStorage.setItem(RECEIPTS_STORAGE_KEY, JSON.stringify(receipts));
-}
-
 function getPendingSyncEvents() {
   const raw = localStorage.getItem(PENDING_SYNC_STORAGE_KEY);
   if (!raw) return [];
@@ -264,8 +252,8 @@ function savePendingSyncEvents(events) {
 
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
-  if (!API_BASE_URL) {
-    dbSyncStatus.textContent = "Banco nao configurado (defina window.APP_API_BASE_URL).";
+  if (!syncBackendReady()) {
+    dbSyncStatus.textContent = "Banco nao configurado (Supabase ou APP_API_BASE_URL).";
     dbSyncStatus.className = "connection-status offline";
     return;
   }
@@ -279,7 +267,7 @@ function updateDbSyncStatus(customText) {
 }
 
 async function processPendingSyncEvents() {
-  if (!API_BASE_URL || !navigator.onLine) {
+  if (!syncBackendReady() || !navigator.onLine) {
     updateDbSyncStatus();
     return;
   }
@@ -287,22 +275,15 @@ async function processPendingSyncEvents() {
   while (queue.length) {
     const event = queue[0];
     try {
-      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
-      const response = await fetch(url);
-      const text = await response.text();
-      let data = null;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        break;
-      }
-      if (!data || data.ok === false) {
-        console.error("Sync recusado:", data && data.error);
+      const result = await sendSyncEvent(event);
+      if (!result.ok) {
+        console.error("Sync recusado:", result.error);
         break;
       }
       queue = queue.slice(1);
       savePendingSyncEvents(queue);
-    } catch {
+    } catch (error) {
+      console.error("Sync falhou:", error);
       break;
     }
   }
@@ -317,10 +298,8 @@ function enqueueSyncEvent(type, payload) {
     payload,
     createdAt: new Date().toISOString(),
   };
-  const shSecret = typeof window !== "undefined" && window.SHEETS_SYNC_SECRET;
-  if (shSecret && String(shSecret).trim()) {
-    ev.secret = String(shSecret).trim();
-  }
+  const shSecret = typeof window.SHEETS_SYNC_SECRET === "string" ? window.SHEETS_SYNC_SECRET.trim() : "";
+  if (shSecret) ev.secret = shSecret;
   queue.push(ev);
   savePendingSyncEvents(queue);
   updateDbSyncStatus();
@@ -329,17 +308,10 @@ function enqueueSyncEvent(type, payload) {
 
 function getUniqueFuelOptions() {
   const records = getRecords();
-  const receipts = getReceipts();
   const dynamicOptions = records.map((record) => record.fuelType);
-  const dynamicReceiptOptions = receipts.map((receipt) => receipt.fuelType);
-  return [
-    ...new Set([
-      ...POST_FUEL_OPTIONS,
-      ...RECEIPT_FUEL_OPTIONS,
-      ...dynamicOptions,
-      ...dynamicReceiptOptions,
-    ]),
-  ].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return [...new Set([...POST_FUEL_OPTIONS, ...dynamicOptions])].sort((a, b) =>
+    a.localeCompare(b, "pt-BR")
+  );
 }
 
 function renderFuelOptionsSettings() {
@@ -359,7 +331,6 @@ function renderFuelOptionsSettings() {
       <span>${fuel}</span>
       <span>Regra fixa</span>
     `;
-
     fuelOptionsList.appendChild(item);
   });
 }
@@ -386,13 +357,8 @@ function fillVehicleSelect() {
 }
 
 function fillFuelSelects() {
-  if (!fuelTypeSelect || !receiptFuelTypeSelect) {
-    console.warn("fillFuelSelects: select de combustivel nao encontrado no DOM.");
-    return;
-  }
+  if (!fuelTypeSelect) return;
   const selectedFuelType = fuelTypeSelect.value;
-  const selectedReceiptFuelType = receiptFuelTypeSelect.value;
-
   fuelTypeSelect.innerHTML = "<option value=''>Selecione</option>";
   POST_FUEL_OPTIONS.forEach((fuelType) => {
     const option = document.createElement("option");
@@ -400,20 +366,8 @@ function fillFuelSelects() {
     option.textContent = fuelType;
     fuelTypeSelect.appendChild(option);
   });
-
-  receiptFuelTypeSelect.innerHTML = "<option value=''>Selecione</option>";
-  RECEIPT_FUEL_OPTIONS.forEach((fuelType) => {
-    const option = document.createElement("option");
-    option.value = fuelType;
-    option.textContent = fuelType;
-    receiptFuelTypeSelect.appendChild(option);
-  });
-
   if (selectedFuelType && POST_FUEL_OPTIONS.includes(selectedFuelType)) {
     fuelTypeSelect.value = selectedFuelType;
-  }
-  if (selectedReceiptFuelType && RECEIPT_FUEL_OPTIONS.includes(selectedReceiptFuelType)) {
-    receiptFuelTypeSelect.value = selectedReceiptFuelType;
   }
 }
 
@@ -439,42 +393,10 @@ function renderRecentPosto() {
   });
 }
 
-function renderRecentComboio() {
-  const receipts = getReceipts();
-  recentComboioList.innerHTML = "";
-  const last5 = receipts.slice(-5).reverse();
-  if (!last5.length) {
-    recentComboioList.innerHTML =
-      "<li class='recent-item recent-item-4 recent-empty'><span class='recent-cell'>Nenhum servico ainda.</span></li>";
-    return;
-  }
-  last5.forEach((receipt) => {
-    const li = document.createElement("li");
-    li.className = "recent-item recent-item-4";
-    li.setAttribute("role", "row");
-    const ord = escapeHtml(String(receipt.orderNumber || "-"));
-    const veh = escapeHtml(String(receipt.vehicle || "-"));
-    const fuel = escapeHtml(String(receipt.fuelType || "-"));
-    const qty = escapeHtml(String(receipt.liters || "0"));
-    li.innerHTML = `
-      <span class="recent-cell">${ord}</span>
-      <span class="recent-cell">${veh}</span>
-      <span class="recent-cell">${fuel}</span>
-      <span class="recent-cell">${qty} L</span>
-    `;
-    recentComboioList.appendChild(li);
-  });
-}
-
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
-}
-
-function renderAll() {
-  renderRecentPosto();
-  renderRecentComboio();
 }
 
 function updateConnectionStatus() {
@@ -517,59 +439,7 @@ form.addEventListener("submit", (event) => {
   fillFuelSelects();
   fillVehicleSelect();
   renderFuelOptionsSettings();
-  renderAll();
-});
-
-receiptForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const formData = new FormData(receiptForm);
-  const fuelType = String(formData.get("receiptFuelType") || "").trim();
-  if (!RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
-  const lubeActions = formData.getAll("lubeActions");
-  const requiresObservation =
-    lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel");
-  const lubeObservation = String(formData.get("lubeObservation") || "").trim();
-  if (requiresObservation && !lubeObservation) return;
-
-  const oilLine1 = String(formData.get("lubeOilType1") || "").trim();
-  const oilLine2 = String(formData.get("lubeOilType2") || "").trim();
-  const filterLine1 = String(formData.get("lubeFilterType1") || "").trim();
-  const filterLine2 = String(formData.get("lubeFilterType2") || "").trim();
-
-  const orderNumber = assignNextOrderNumber();
-  const vehicle = String(formData.get("receiptVehicle") || "").trim();
-
-  const receipt = {
-    id: makeId(),
-    orderNumber,
-    vehicle,
-    fuelType,
-    liters: Number(formData.get("receiptLiters")).toFixed(1),
-    location: String(formData.get("receiptLocation") || "").trim(),
-    workType: String(formData.get("receiptWorkType") || "").trim(),
-    lubrication: {
-      actions: lubeActions,
-      oilLine1,
-      oilLine2,
-      filterLine1,
-      filterLine2,
-      observation: lubeObservation,
-    },
-    source: "comboio",
-    createdAt: toIsoFromDateTimeLocal(String(formData.get("receiptDateTime") || "")),
-  };
-
-  const receipts = getReceipts();
-  receipts.push(receipt);
-  saveReceipts(receipts);
-  enqueueSyncEvent("recebimento", receipt);
-  receiptForm.reset();
-  receiptDateTimeInput.value = getNowLocalDateTimeInputValue();
-  toggleLubeObservationField();
-  updateOrderPreview();
-  fillFuelSelects();
-  renderFuelOptionsSettings();
-  renderAll();
+  renderRecentPosto();
 });
 
 fuelSettingsForm.addEventListener("submit", (event) => {
@@ -578,17 +448,11 @@ fuelSettingsForm.addEventListener("submit", (event) => {
   newFuelOptionInput.value = "";
 });
 
-gatePostoButton.addEventListener("click", () => enterWorkspace("posto"));
-gateComboioButton.addEventListener("click", () => enterWorkspace("comboio"));
-changeAreaButton.addEventListener("click", () => showGate());
-receiptForm.querySelectorAll('input[name="lubeActions"]').forEach((checkbox) => {
-  checkbox.addEventListener("change", toggleLubeObservationField);
-});
 window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=21";
+const SW_URL = "./sw.js?v=24";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
@@ -607,9 +471,7 @@ fillFuelSelects();
 fillVehicleSelect();
 renderFuelOptionsSettings();
 setDefaultDateTimes();
-toggleLubeObservationField();
-updateOrderPreview();
 updateConnectionStatus();
 updateDbSyncStatus();
 processPendingSyncEvents();
-renderAll();
+renderRecentPosto();
