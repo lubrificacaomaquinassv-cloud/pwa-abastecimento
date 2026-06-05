@@ -125,7 +125,7 @@ function mapPostoRow(payload, createdAt) {
     vehicle: String(payload.vehicle || "").trim(),
     fuel_type: String(payload.fuelType || "").trim(),
     liters: Number(payload.liters),
-    operator_driver: String(payload.operatorDriver || "").trim() || null,
+    operator: String(payload.operatorDriver || "").trim() || null,
     hourmeter: String(payload.hourmeterOdometer || "").trim() || null,
     work_front: String(payload.workFront || "").trim() || null,
     work_type: String(payload.workType || "").trim() || null,
@@ -452,7 +452,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=24";
+const SW_URL = "./sw.js?v=25";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
