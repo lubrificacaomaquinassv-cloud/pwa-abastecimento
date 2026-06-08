@@ -70,6 +70,7 @@ const POSTO_FROTA_OPERACIONAL = [
   { code: "3306", model: "BM 110" },
   { code: "3363", model: "BH 224" },
   { code: "3307", model: "BM 125" },
+  { code: "920K", model: "Cat920" },
 ];
 
 /** Itens operacionais avulsos (gasolina/equipamentos na sede). */
