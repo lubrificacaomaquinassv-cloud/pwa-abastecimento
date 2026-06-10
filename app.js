@@ -193,6 +193,8 @@ const connectionStatus = document.getElementById("connection-status");
 const dbSyncStatus = document.getElementById("db-sync-status");
 const fuelTypeSelect = document.getElementById("fuelType");
 const vehicleSelect = document.getElementById("vehicle");
+const vehicleSearchInput = document.getElementById("vehicleSearch");
+let vehicleFilterQuery = "";
 const fuelSettingsForm = document.getElementById("fuel-settings-form");
 const newFuelOptionInput = document.getElementById("new-fuel-option");
 const fuelOptionsList = document.getElementById("fuel-options-list");
@@ -338,15 +340,39 @@ function renderFuelOptionsSettings() {
   });
 }
 
+function normSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function vehicleMatchesFilter(code, model, query) {
+  if (!query) return true;
+  const hay = normSearchText(`${code} ${model}`);
+  return hay.includes(normSearchText(query));
+}
+
+function resetVehicleSearch() {
+  vehicleFilterQuery = "";
+  if (vehicleSearchInput) vehicleSearchInput.value = "";
+}
+
 function fillVehicleSelect() {
   if (!vehicleSelect) return;
   const selected = vehicleSelect.value;
   vehicleSelect.innerHTML = "<option value=''>Selecione a frota</option>";
+  let matchCount = 0;
   POSTO_VEHICLE_GROUPS.forEach(({ label, items }) => {
-    if (!items.length) return;
+    const filtered = items.filter(({ code, model }) =>
+      vehicleMatchesFilter(code, model, vehicleFilterQuery)
+    );
+    if (!filtered.length) return;
     const group = document.createElement("optgroup");
     group.label = label;
-    items.forEach(({ code, model }) => {
+    filtered.forEach(({ code, model }) => {
+      matchCount += 1;
       const option = document.createElement("option");
       option.value = code;
       option.textContent = `${code} · ${model}`;
@@ -354,6 +380,13 @@ function fillVehicleSelect() {
     });
     vehicleSelect.appendChild(group);
   });
+  if (!matchCount && vehicleFilterQuery) {
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.disabled = true;
+    empty.textContent = "Nenhuma frota encontrada";
+    vehicleSelect.appendChild(empty);
+  }
   if (selected && POSTO_VEHICLE_CODES.includes(selected)) {
     vehicleSelect.value = selected;
   }
@@ -439,6 +472,7 @@ form.addEventListener("submit", (event) => {
   enqueueSyncEvent("abastecimento", record);
   form.reset();
   fuelDateTimeInput.value = getNowLocalDateTimeInputValue();
+  resetVehicleSearch();
   fillFuelSelects();
   fillVehicleSelect();
   renderFuelOptionsSettings();
@@ -455,7 +489,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=26";
+const SW_URL = "./sw.js?v=27";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
@@ -467,6 +501,13 @@ if ("serviceWorker" in navigator) {
     } catch (error) {
       console.error("Falha ao registrar service worker:", error);
     }
+  });
+}
+
+if (vehicleSearchInput) {
+  vehicleSearchInput.addEventListener("input", () => {
+    vehicleFilterQuery = String(vehicleSearchInput.value || "").trim();
+    fillVehicleSelect();
   });
 }
 
