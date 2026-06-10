@@ -316,6 +316,26 @@ label {
   font-size: 14px;
 }
 
+.vehicle-search-wrap {
+  position: relative;
+  margin-top: 6px;
+}
+
+.vehicle-search {
+  width: 100%;
+  margin-top: 0;
+  padding-left: 36px;
+}
+
+.vehicle-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
 .hidden {
   display: none;
 }
@@ -711,3 +731,9 @@ button.gate-choice-btn-alt:hover {
   color: #fff;
   border-color: var(--primary);
 }
+
+
+STELESS
+
+
+
