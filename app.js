@@ -85,7 +85,9 @@ const POSTO_FROTA_AVULSOS = [
   { code: "EDIVALDO", model: "EDIVALDO" },
   { code: "LUIZ", model: "LUIZ" },
   { code: "AJM", model: "AJM" },
-];
+  { code: "5A60", model: "ACENIR" },
+  { code: "5555", model: "AILTON" },
+ ];
 
 const POSTO_VEHICLE_GROUPS = [
   { label: "Veiculos leves (placa)", items: POSTO_FLEET_LEVE },
