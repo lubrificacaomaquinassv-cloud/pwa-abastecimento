@@ -48,6 +48,7 @@ const POSTO_FROTA_OPERACIONAL = [
   { code: "3379", model: "XRE 190" },
   { code: "3367", model: "XRE 300" },
   { code: "3392", model: "XRE 300" },
+  { code: "Yama", model: "NEO" },
   { code: "3285", model: "PATROL G930" },
   { code: "3391", model: "QUADRICICLO" },
   { code: "3072", model: "REBOQUE" },
