@@ -77,6 +77,8 @@ const POSTO_FROTA_OPERACIONAL = [
   { code: "W200", model: "KOMATSU" },
   { code: "3407", model: "QUADRICICLO" },
   { code: "3408", model: "QUADRICICLO" },
+  { code: "6B97", model: "SEBASTIAO" },
+  { code: "3J65", model: "MATHEUS" },
 ];
 
 /** Itens operacionais avulsos (gasolina/equipamentos na sede). */
