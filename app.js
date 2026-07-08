@@ -95,6 +95,7 @@ const POSTO_FROTA_AVULSOS = [
   { code: "AJM", model: "AJM" },
   { code: "5A60", model: "ACENIR" },
   { code: "5555", model: "AILTON" },
+  { code: "9J19", model: "PRISMA" },
  ];
 
 const POSTO_VEHICLE_GROUPS = [
