@@ -24,6 +24,8 @@
         </div>
         <p id="connection-status" class="connection-status" aria-live="polite"></p>
         <p id="db-sync-status" class="connection-status" aria-live="polite"></p>
+        <p id="sync-error-detail" class="connection-status" aria-live="polite"></p>
+        <button type="button" id="sync-now-btn" class="sync-now-btn">Sincronizar agora</button>
       </header>
 
       <div id="workspace-posto" class="workspace workspace-posto" role="region" aria-labelledby="posto-heading">
@@ -115,7 +117,11 @@
         </section>
 
         <section id="recent-posto-section" class="card">
-          <h2>Ultimos 5 abastecimentos</h2>
+          <h2>Ultimos 5 abastecimentos (neste celular)</h2>
+          <p class="subtitle">
+            Lista salva no aparelho. O envio ao banco e feito em segundo plano — veja o status acima
+            (deve aparecer &quot;Sincronizacao com banco em dia&quot;).
+          </p>
           <div class="recent-table" role="table" aria-label="Ultimos abastecimentos no posto">
             <div class="recent-row recent-head" role="row">
               <span role="columnheader">Placa/Frota</span>
@@ -151,7 +157,7 @@
       </div>
     </main>
 
-    <script src="./config.js?v=27"></script>
-    <script src="./app.js?v=27"></script>
+    <script src="./config.js?v=28"></script>
+    <script src="./app.js?v=28"></script>
   </body>
 </html>

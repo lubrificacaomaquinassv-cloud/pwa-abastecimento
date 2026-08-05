@@ -135,17 +135,24 @@ function supabaseHeaders(prefer) {
 }
 
 function mapPostoRow(payload, createdAt) {
+  const vehicle = String(payload.vehicle || "").trim();
+  const fuelType = String(payload.fuelType || "").trim();
+  const liters = Number(payload.liters);
   return {
     id: payload.id,
-    vehicle: String(payload.vehicle || "").trim(),
-    fuel_type: String(payload.fuelType || "").trim(),
-    liters: Number(payload.liters),
+    veiculo_codigo: vehicle,
+    tipo_combustivel: fuelType,
+    quantidade_litros: liters,
+    vehicle,
+    fuel_type: fuelType,
+    liters,
     operator: String(payload.operatorDriver || "").trim() || null,
     hourmeter: String(payload.hourmeterOdometer || "").trim() || null,
     work_front: String(payload.workFront || "").trim() || null,
     work_type: String(payload.workType || "").trim() || null,
     created_at: payload.createdAt || createdAt,
     synced_at: new Date().toISOString(),
+    origem: "POSTO",
   };
 }
 
@@ -203,6 +210,10 @@ const fuelDateTimeInput = document.getElementById("fuelDateTime");
 const recentPostoList = document.getElementById("recent-posto-list");
 const connectionStatus = document.getElementById("connection-status");
 const dbSyncStatus = document.getElementById("db-sync-status");
+const syncErrorDetail = document.getElementById("sync-error-detail");
+const syncNowButton = document.getElementById("sync-now-btn");
+
+let lastSyncError = "";
 const fuelTypeSelect = document.getElementById("fuelType");
 const vehicleSelect = document.getElementById("vehicle");
 const vehicleSearchInput = document.getElementById("vehicleSearch");
@@ -267,44 +278,90 @@ function savePendingSyncEvents(events) {
   localStorage.setItem(PENDING_SYNC_STORAGE_KEY, JSON.stringify(events));
 }
 
+function setSyncError(message) {
+  lastSyncError = String(message || "").trim();
+  if (syncErrorDetail) {
+    syncErrorDetail.textContent = lastSyncError
+      ? `Erro ao enviar: ${lastSyncError}`
+      : "";
+    syncErrorDetail.className = lastSyncError
+      ? "connection-status offline"
+      : "connection-status";
+  }
+}
+
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
   if (!syncBackendReady()) {
-    dbSyncStatus.textContent = "Banco nao configurado (Supabase ou APP_API_BASE_URL).";
+    dbSyncStatus.textContent = "Banco nao configurado (Supabase).";
     dbSyncStatus.className = "connection-status offline";
     return;
   }
   if (pending === 0) {
     dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia.";
     dbSyncStatus.className = "connection-status online";
+    setSyncError("");
     return;
   }
   dbSyncStatus.textContent = `${pending} lancamento(s) aguardando envio ao banco.`;
   dbSyncStatus.className = "connection-status offline";
 }
 
+function rebuildPendingQueueFromLocalRecords() {
+  const local = getRecords().filter((r) => r.source === "posto" || !r.source);
+  const queue = getPendingSyncEvents();
+  const queuedIds = new Set(
+    queue.map((e) => (e.payload && e.payload.id) || "").filter(Boolean)
+  );
+  let changed = false;
+  local.forEach((record) => {
+    if (!record.id || queuedIds.has(record.id)) return;
+    queue.push({
+      id: makeId(),
+      type: "abastecimento",
+      payload: record,
+      createdAt: record.createdAt || new Date().toISOString(),
+    });
+    changed = true;
+  });
+  if (changed) savePendingSyncEvents(queue);
+}
+
 async function processPendingSyncEvents() {
-  if (!syncBackendReady() || !navigator.onLine) {
+  if (!syncBackendReady()) {
     updateDbSyncStatus();
     return;
   }
+  if (!navigator.onLine) {
+    updateDbSyncStatus("Offline — fila sera reenviada ao voltar a internet.");
+    return;
+  }
+  rebuildPendingQueueFromLocalRecords();
   let queue = getPendingSyncEvents();
+  let sent = 0;
   while (queue.length) {
     const event = queue[0];
     try {
       const result = await sendSyncEvent(event);
       if (!result.ok) {
+        setSyncError(result.error || "resposta invalida");
         console.error("Sync recusado:", result.error);
         break;
       }
+      sent += 1;
       queue = queue.slice(1);
       savePendingSyncEvents(queue);
     } catch (error) {
+      setSyncError(error && error.message ? error.message : String(error));
       console.error("Sync falhou:", error);
       break;
     }
   }
-  updateDbSyncStatus();
+  if (sent > 0 && queue.length === 0) {
+    updateDbSyncStatus(`${sent} lancamento(s) enviado(s) ao banco.`);
+  } else {
+    updateDbSyncStatus();
+  }
 }
 
 function enqueueSyncEvent(type, payload) {
@@ -501,7 +558,14 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=27";
+if (syncNowButton) {
+  syncNowButton.addEventListener("click", () => {
+    setSyncError("");
+    processPendingSyncEvents();
+  });
+}
+
+const SW_URL = "./sw.js?v=28";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
@@ -527,7 +591,14 @@ fillFuelSelects();
 fillVehicleSelect();
 renderFuelOptionsSettings();
 setDefaultDateTimes();
+try {
+  localStorage.removeItem("APP_API_BASE_URL");
+} catch (e) {
+  /* ignore */
+}
+
 updateConnectionStatus();
+rebuildPendingQueueFromLocalRecords();
 updateDbSyncStatus();
 processPendingSyncEvents();
 renderRecentPosto();

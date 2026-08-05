@@ -92,6 +92,21 @@ body {
   color: #b42318;
 }
 
+.sync-now-btn {
+  margin-top: 10px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #127446;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sync-now-btn:active {
+  opacity: 0.9;
+}
+
 .card {
   background: var(--card);
   border-radius: 12px;
