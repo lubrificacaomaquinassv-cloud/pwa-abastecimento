@@ -10,7 +10,7 @@ const POST_FUEL_OPTIONS = [FUEL_S500, FUEL_S10, FUEL_GASOLINA];
 /** Veiculos leves — placa aprovada pela gerencia (nao digitar). */
 const POSTO_FLEET_LEVE = [
   { code: "SMC7D44", model: "KWID" },
-  { code: "SMC8I91", model: "KWID" },
+  { code: "UGY9B05", model: "OROCH" },
   { code: "SLZ8I55", model: "KWID" },
   { code: "RWG5D98", model: "TORO" },
   { code: "SMA6B13", model: "TORO" },
