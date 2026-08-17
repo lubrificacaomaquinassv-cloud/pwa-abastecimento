@@ -20,7 +20,8 @@ const POSTO_FLEET_LEVE = [
   { code: "FJY3A25", model: "GOL" },
   { code: "OOH4A79", model: "AMAROK" },
   { code: "AGH7924", model: "S10" },
-  ];
+  { code: "3403", model: "RANGER" },
+];
 
 /** Frota operacional no posto — planilha FROTA_POSTO.xlsx (gerencia, jun/2026). */
 const POSTO_FROTA_OPERACIONAL = [
